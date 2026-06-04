@@ -281,6 +281,20 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                 <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)", marginTop: "4px", lineHeight: 1.35 }}>
                   CPU is slow but safest. Vulkan works on supported GPUs. CUDA is shown only when NVIDIA CUDA support is available.
                 </span>
+                {constraints.backendType === "cuda" && specs?.gpu_name && String(specs.gpu_name).toLowerCase().includes("gtx") && (
+                  <div style={{
+                    marginTop: "12px",
+                    padding: "10px 14px",
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "1px dashed rgb(239, 68, 68)",
+                    borderRadius: "8px",
+                    fontSize: "0.75rem",
+                    color: "var(--md-sys-color-on-surface)",
+                    lineHeight: "1.45"
+                  }}>
+                    <strong>Performance Alert:</strong> Your graphics card (<code>{specs.gpu_name}</code>) is a GTX-series GPU which lacks hardware <strong>Tensor Cores</strong>. Running in CUDA mode will be up to 3x slower. We strongly recommend switching to <strong>Vulkan GPU</strong> for optimal generation speed.
+                  </div>
+                )}
                 {backendOptions?.unavailable?.length > 0 && (
                   <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
                     {backendOptions.unavailable.map((backend) => (
@@ -290,6 +304,54 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="m3-text-field" style={{ marginTop: "20px" }}>
+                <label className="m3-text-field-label">Memory Optimization (GPU VRAM)</label>
+                
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginTop: "10px" }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", cursor: "pointer", fontSize: "0.85rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={constraints.vaeTiling !== false}
+                      onChange={(e) => updateConstraint("vaeTiling", e.target.checked)}
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        marginTop: "3px",
+                        accentColor: "var(--md-sys-color-primary)",
+                        cursor: "pointer"
+                      }}
+                    />
+                    <div>
+                      <strong style={{ color: "var(--md-sys-color-on-surface)" }}>Enable VAE Tiling</strong>
+                      <div style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)", marginTop: "2px", lineHeight: 1.35 }}>
+                        Processes VAE decoding in smaller tiles. Drastically reduces VRAM usage (from 2GB+ down to ~100MB) with no speed loss. Highly recommended for GPUs with 4GB-6GB VRAM.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", cursor: "pointer", fontSize: "0.85rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={constraints.vaeOnCpu === true}
+                      onChange={(e) => updateConstraint("vaeOnCpu", e.target.checked)}
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        marginTop: "3px",
+                        accentColor: "var(--md-sys-color-primary)",
+                        cursor: "pointer"
+                      }}
+                    />
+                    <div>
+                      <strong style={{ color: "var(--md-sys-color-on-surface)" }}>Run VAE on CPU</strong>
+                      <div style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)", marginTop: "2px", lineHeight: 1.35 }}>
+                        Offloads the heavy VAE decoder computation from GPU VRAM to system memory (RAM). Saves ~2GB of VRAM, but makes the final decoding stage slightly slower.
+                      </div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           </div>

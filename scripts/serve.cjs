@@ -85,6 +85,8 @@ let currentSettings = {
   threads:  8,
   useGpu:   true,
   backendType: "auto",
+  vaeTiling: true,
+  vaeOnCpu:  false,
 };
 
 let lastCpuSample = null;
@@ -511,12 +513,25 @@ function getBackendOptions() {
   if (cudaInstalled && !cudaAvailable) {
     unavailable.push({ id: "cuda", label: "CUDA GPU", reason: "Installed, but CUDA backend validation failed." });
   }
+  let defaultBackend = "cpu";
+  if (cudaAvailable) {
+    const gpuName = String(getGpuInfo().name).toLowerCase();
+    const isGtxCard = gpuName.includes("gtx");
+    if (isGtxCard && vulkanAvailable) {
+      defaultBackend = "vulkan"; // Default to Vulkan for GTX cards because of lack of Tensor Cores
+    } else {
+      defaultBackend = "cuda";
+    }
+  } else if (vulkanAvailable) {
+    defaultBackend = "vulkan";
+  }
+
   cachedBackendOptions = {
     options,
     unavailable,
     cudaAvailable,
     vulkanAvailable,
-    defaultBackendType: cudaAvailable ? "cuda" : vulkanAvailable ? "vulkan" : "cpu",
+    defaultBackendType: defaultBackend,
   };
   return cachedBackendOptions;
 }
@@ -707,6 +722,13 @@ function startBackend(settings = {}) {
       "--rng", "cuda",
       "--sampler-rng", "cuda",
     );
+  }
+
+  if (currentSettings.vaeTiling) {
+    args.push("--vae-tiling");
+  }
+  if (currentSettings.vaeOnCpu) {
+    args.push("--vae-on-cpu");
   }
 
   console.log("  [backend] Starting:", path.basename(backendPath), args.join(" "));
@@ -1314,6 +1336,8 @@ const server = http.createServer(async (req, res) => {
       newSettings.backendType = String(body.backend_type);
       newSettings.useGpu = body.backend_type !== "cpu";
     }
+    if (typeof body.vae_tiling === "boolean") newSettings.vaeTiling = body.vae_tiling;
+    if (typeof body.vae_on_cpu === "boolean") newSettings.vaeOnCpu = body.vae_on_cpu;
     startBackend(newSettings);
     return json(res, 200, { ok: true, message: "Backend restarting...", settings: currentSettings });
   }

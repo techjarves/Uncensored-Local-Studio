@@ -106,6 +106,8 @@ function App() {
     useTaesd: true,
     useFlashAttn: true,
     useTiling: false,
+    vaeTiling: true,
+    vaeOnCpu: false,
     threads: 4,
     backendType: "auto",
   });
