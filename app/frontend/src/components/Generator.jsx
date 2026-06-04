@@ -10,7 +10,7 @@ const GalleryItem = memo(({ img, idx, isSelected, onClick }) => {
     <div
       className={`gallery-item ${isSelected ? "selected" : ""}`}
       onClick={handleClick}
-      title={`Prompt: ${img.prompt}\nSeed: ${img.seed}`}
+      title={`Prompt: ${img.prompt}\nSeed: ${img.seed}${img.duration_sec ? `\nTime: ${img.duration_sec.toFixed(1)}s` : ""}`}
     >
       <img src={img.url} className="gallery-thumb" alt="Thumbnail" loading="lazy" decoding="async" />
       {isSelected && (
@@ -55,6 +55,7 @@ function Generator({
   const [isRestartingBackend, setIsRestartingBackend] = useState(false);
   const [restartLoadProgress, setRestartLoadProgress] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [isDecoding, setIsDecoding] = useState(false);
   const [selectedGalleryIndexes, setSelectedGalleryIndexes] = useState([]);
   const timerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -170,6 +171,7 @@ function Generator({
     setCurrentStep(0);
     setGenerationSpeed("");
     setIsCpuFallback(false);
+    setIsDecoding(false);
     setGenDuration(null);
     setOutputImage(null);
 
@@ -194,16 +196,25 @@ function Generator({
       try {
         const progress = await getGenerationProgress();
         if (progress && progress.active) {
-          const step = progress.step || 0;
+          const decoding = progress.decoding || false;
+          setIsDecoding(decoding);
+
+          const step = decoding ? (progress.steps || constraints.steps || 20) : (progress.step || 0);
           const steps = progress.steps || constraints.steps || 20;
-          const speed = progress.speed || "";
+          const speed = decoding ? "" : (progress.speed || "");
 
           setCurrentStep(step);
-          setGenerationSpeed(speed);
+          if (!decoding) {
+            setGenerationSpeed(speed);
+          } else {
+            setGenerationSpeed("decoding");
+          }
 
           // Calculate progress percentage
           let progressPercent = 0;
-          if (steps > 0) {
+          if (decoding) {
+            progressPercent = 99;
+          } else if (steps > 0) {
             progressPercent = Math.round((step / steps) * 100);
           }
           progressPercent = Math.min(99, progressPercent);
@@ -211,17 +222,21 @@ function Generator({
 
           // Calculate remaining time
           let remaining = 0;
-          const numericSpeed = parseFloat(speed);
-          if (!isNaN(numericSpeed) && numericSpeed > 0) {
-            const remainingSteps = Math.max(0, steps - step);
-            if (speed.includes("it/s")) {
-              remaining = remainingSteps / numericSpeed;
-            } else if (speed.includes("s/it")) {
-              remaining = remainingSteps * numericSpeed;
-            }
+          if (decoding) {
+            remaining = 3;
           } else {
-            const activeStepTime = gpuSelected ? baseGpuStepTime : baseCpuStepTime;
-            remaining = Math.max(0, (steps - step) * activeStepTime);
+            const numericSpeed = parseFloat(speed);
+            if (!isNaN(numericSpeed) && numericSpeed > 0) {
+              const remainingSteps = Math.max(0, steps - step);
+              if (speed.includes("it/s")) {
+                remaining = remainingSteps / numericSpeed;
+              } else if (speed.includes("s/it")) {
+                remaining = remainingSteps * numericSpeed;
+              }
+            } else {
+              const activeStepTime = gpuSelected ? baseGpuStepTime : baseCpuStepTime;
+              remaining = Math.max(0, (steps - step) * activeStepTime);
+            }
           }
 
           // Detect CPU fallback / slow generation if GPU was requested but it runs slow
@@ -482,7 +497,7 @@ function Generator({
     }));
     setOutputImage(item.url);
     setOutputSeed(item.seed);
-    setGenDuration(null);
+    setGenDuration(item.duration_sec ?? item.durationSec ?? null);
   }, [setPrompt, setNegativePrompt, setConstraints]);
 
   const toggleGallerySelection = useCallback((idx, event) => {
@@ -733,7 +748,9 @@ function Generator({
                 ) : (
                   <>
                     <div className="progress-spinner"></div>
-                    <div className="progress-text" style={{ fontSize: "1.1rem", fontWeight: 700 }}>Generating Locally...</div>
+                    <div className="progress-text" style={{ fontSize: "1.1rem", fontWeight: 700 }}>
+                      {isDecoding ? "Decoding Latents..." : "Generating Locally..."}
+                    </div>
                     
                     {isCpuFallback && (
                       <div style={{ fontSize: "0.8rem", color: "var(--md-sys-color-primary)", fontWeight: 600, background: "var(--md-sys-color-primary-container)", padding: "4px 12px", borderRadius: "12px", margin: "4px 0 8px 0", animation: "pulse 2s infinite" }}>
@@ -744,10 +761,10 @@ function Generator({
                     {/* Real-time stats display */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", width: "80%", margin: "8px 0 0 0", fontSize: "0.85rem", opacity: 0.9 }}>
                       <div style={{ textAlign: "left" }}>
-                        <strong>Step:</strong> {currentStep} / {constraints.steps} ({constraints.steps - currentStep} left)
+                        <strong>Step:</strong> {currentStep} / {constraints.steps} ({Math.max(0, constraints.steps - currentStep)} left)
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <strong>Elapsed:</strong> {elapsedTime}s{generationSpeed && ` (${generationSpeed})`}
+                        <strong>Elapsed:</strong> {elapsedTime}s{generationSpeed && ` (${generationSpeed === "decoding" ? "decoding" : generationSpeed})`}
                       </div>
                     </div>
 

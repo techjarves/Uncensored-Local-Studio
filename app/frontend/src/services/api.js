@@ -318,6 +318,7 @@ export async function listModelsFromDisk() {
 // Handles API calls to sd-server or mocks them if server is unreachable
 export async function generateImage(prompt, negativePrompt, constraints, activeModelName, inputImageBase64, onProgress, signal) {
   console.log("Initiating image generation:", { prompt, negativePrompt, constraints, activeModelName });
+  const startTime = Date.now();
 
   const port = 8080;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -495,11 +496,12 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
 
     const base64Svg = btoa(unescape(encodeURIComponent(svgString)));
     const mockImageUrl = `data:image/svg+xml;base64,${base64Svg}`;
+    const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
     
     return {
       image: mockImageUrl,
       seed: payload.seed,
-      duration_sec: 3.0,
+      duration_sec: durationSec,
     };
   };
 
@@ -540,10 +542,11 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
       // Response: { data: [{ b64_json: "..." }] }
       const imgB64 = data?.data?.[0]?.b64_json ?? data?.images?.[0];
       if (imgB64) {
+        const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
         return {
           image:        `data:image/png;base64,${imgB64}`,
           seed:         data.data?.[0]?.seed ?? payload.seed,
-          duration_sec: 4.5,
+          duration_sec: durationSec,
         };
       }
     } else {

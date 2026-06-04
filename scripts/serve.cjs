@@ -787,14 +787,21 @@ function startBackend(settings = {}) {
         generationState.step = 0;
         generationState.steps = 0;
         generationState.speed = "";
+        generationState.decoding = false;
+      }
+      
+      if (cleanLine.includes("decoding") && generationState.active) {
+        generationState.decoding = true;
       }
       
       const match = cleanLine.match(/\|\s*[^|]*\s*\|\s*(\d+)\/(\d+)\s*-\s*([\d.]+\s*(?:it\/s|s\/it))/);
       if (match) {
         generationState.active = true;
-        generationState.step = parseInt(match[1], 10);
-        generationState.steps = parseInt(match[2], 10);
-        generationState.speed = match[3].trim();
+        if (!generationState.decoding) {
+          generationState.step = parseInt(match[1], 10);
+          generationState.steps = parseInt(match[2], 10);
+          generationState.speed = match[3].trim();
+        }
       }
       
       if (cleanLine.includes("generate_image completed")) {
@@ -802,6 +809,7 @@ function startBackend(settings = {}) {
         generationState.step = 0;
         generationState.steps = 0;
         generationState.speed = "";
+        generationState.decoding = false;
       }
     }
   });
@@ -841,6 +849,7 @@ function startBackend(settings = {}) {
     generationState.step = 0;
     generationState.steps = 0;
     generationState.speed = "";
+    generationState.decoding = false;
 
     // Force a VRAM poll to update free memory space
     setTimeout(() => pollNvidiaVram(true), 1000);
@@ -866,6 +875,7 @@ let generationState = {
   step: 0,
   steps: 0,
   speed: "",
+  decoding: false,
 };
 
 function startModelDownload(url, overrideFilename = null) {
