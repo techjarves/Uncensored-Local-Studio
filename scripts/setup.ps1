@@ -254,6 +254,27 @@ if ($hasNvidia) {
         }
     }
 
+    $cudaDllsExist = (Test-Path (Join-Path $backendDest "cublas64_12.dll")) -and `
+                     (Test-Path (Join-Path $backendDest "cublasLt64_12.dll")) -and `
+                     (Test-Path (Join-Path $backendDest "cudart64_12.dll"))
+
+    if (-not $cudaDllsExist) {
+        Print-Info "CUDA runtime DLLs are missing from backend folder. Downloading portable CUDA v12 runtime..."
+        $dllZip = Join-Path $toolsDir "cuda-dlls.zip"
+        $ok = Invoke-RichDownload `
+            -Url  "https://github.com/ggml-org/llama.cpp/releases/download/b9509/cudart-llama-bin-win-cuda-12.4-x64.zip" `
+            -Dest $dllZip `
+            -Label "CUDA v12 Runtime DLLs (llama.cpp)"
+
+        if ($ok) {
+            Expand-WithProgress -ZipPath $dllZip -Destination $backendDest -Label "CUDA Runtime DLLs"
+            Remove-Item $dllZip -Force
+            Print-OK "CUDA runtime DLLs set up successfully!"
+        } else {
+            Print-Warn "Could not download portable CUDA runtime DLLs automatically. If the app fails to start in CUDA mode, you may need to install the CUDA Toolkit manually."
+        }
+    }
+
     Print-Step 2 $steps "Setting up stable-diffusion.cpp Vulkan GPU backend for comparison (app/backend/win/vulkan/)"
     $backendDest = Join-Path $appDir "backend\win\vulkan"
     $backendExe  = Join-Path $backendDest "sd-vulkan.exe"
