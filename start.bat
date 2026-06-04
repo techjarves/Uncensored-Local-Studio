@@ -3,8 +3,8 @@ title Local AI Image Generator
 cd /d "%~dp0"
 
 set APP=%~dp0app
-set NODE=%APP%\tools\node\node.exe
-set NPM=%APP%\tools\node\npm.cmd
+set NODE=%APP%\tools\node-win\node.exe
+set NPM=%APP%\tools\node-win\npm.cmd
 set DIST=%APP%\dist\index.html
 set SETUP=%~dp0scripts\setup.ps1
 set CUDA_BACKEND=%APP%\backend\win\cuda\sd-cuda.exe
@@ -14,7 +14,7 @@ set SETUP_REASON=
 set SETUP_MODE=Repair
 
 :: ── First-time setup check ────────────────────────────────────────────────────
-if not exist "%APP%\tools\node" set SETUP_MODE=First-Time Setup
+if not exist "%APP%\tools\node-win" set SETUP_MODE=First-Time Setup
 if not exist "%NODE%" (
     set SETUP_REASON=Portable Node.js is missing.
     goto :run_setup
@@ -49,7 +49,7 @@ echo.
 echo  Press any key to continue, or Ctrl+C to cancel.
 pause >nul
 
-:: Clear old local server processes before setup so app/tools/node can be replaced
+:: Clear old local server processes before setup so app/tools/node-win can be replaced
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8080 "') do taskkill /f /pid %%a >nul 2>nul
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":1420 "') do taskkill /f /pid %%a >nul 2>nul
 

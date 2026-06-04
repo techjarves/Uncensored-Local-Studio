@@ -310,15 +310,36 @@ function checkPort(port) {
 
 function getSetupPaths() {
   const appDir = path.join(ROOT, "app");
-  return {
-    node: path.join(appDir, "tools", "node", "node.exe"),
-    npm: path.join(appDir, "tools", "node", "npm.cmd"),
-    distIndex: path.join(DIST, "index.html"),
-    cudaBackend: BACKEND_PATHS.cuda,
-    vulkanBackend: BACKEND_PATHS.vulkan,
-    models: MODELS,
-    outputs: OUTPUTS,
-  };
+  if (osPlatform === "win32") {
+    return {
+      node: path.join(appDir, "tools", "node-win", "node.exe"),
+      npm: path.join(appDir, "tools", "node-win", "npm.cmd"),
+      distIndex: path.join(DIST, "index.html"),
+      cudaBackend: BACKEND_PATHS.cuda,
+      vulkanBackend: BACKEND_PATHS.vulkan,
+      models: MODELS,
+      outputs: OUTPUTS,
+    };
+  } else if (osPlatform === "darwin") {
+    return {
+      node: path.join(appDir, "tools", "node-mac", "bin", "node"),
+      npm: path.join(appDir, "tools", "node-mac", "bin", "npm"),
+      distIndex: path.join(DIST, "index.html"),
+      macBackend: BACKEND_PATHS.mac,
+      models: MODELS,
+      outputs: OUTPUTS,
+    };
+  } else {
+    // Linux / WSL
+    return {
+      node: path.join(appDir, "tools", "node-linux", "bin", "node"),
+      npm: path.join(appDir, "tools", "node-linux", "bin", "npm"),
+      distIndex: path.join(DIST, "index.html"),
+      linuxBackend: BACKEND_PATHS.linux,
+      models: MODELS,
+      outputs: OUTPUTS,
+    };
+  }
 }
 
 async function getHealth() {
@@ -327,16 +348,31 @@ async function getHealth() {
     getPathInfo("Portable Node.js", paths.node),
     getPathInfo("Portable npm", paths.npm),
     getPathInfo("Frontend build", paths.distIndex),
-    getPathInfo("CUDA backend", paths.cudaBackend),
-    getPathInfo("Vulkan backend", paths.vulkanBackend),
     getDirInfo("Models folder", paths.models),
     getDirInfo("Outputs folder", paths.outputs),
   ];
 
-  const backendInstalled = checks.find((check) => check.label === "CUDA backend")?.exists ||
-    checks.find((check) => check.label === "Vulkan backend")?.exists;
+  if (osPlatform === "win32") {
+    checks.push(getPathInfo("CUDA backend", paths.cudaBackend));
+    checks.push(getPathInfo("Vulkan backend", paths.vulkanBackend));
+  } else if (osPlatform === "darwin") {
+    checks.push(getPathInfo("Mac backend", paths.macBackend));
+  } else {
+    checks.push(getPathInfo("Linux backend", paths.linuxBackend));
+  }
+
+  let backendInstalled = false;
+  if (osPlatform === "win32") {
+    backendInstalled = checks.find((check) => check.label === "CUDA backend")?.exists ||
+      checks.find((check) => check.label === "Vulkan backend")?.exists;
+  } else if (osPlatform === "darwin") {
+    backendInstalled = checks.find((check) => check.label === "Mac backend")?.exists;
+  } else {
+    backendInstalled = checks.find((check) => check.label === "Linux backend")?.exists;
+  }
+
   const criticalOk = checks
-    .filter((check) => !["CUDA backend", "Vulkan backend"].includes(check.label))
+    .filter((check) => !["CUDA backend", "Vulkan backend", "Linux backend", "Mac backend"].includes(check.label))
     .every((check) => check.ok) && backendInstalled;
 
   const ports = {
@@ -347,9 +383,11 @@ async function getHealth() {
   ports.backend.ok = backendProc !== null ? !ports.backend.available : ports.backend.available;
 
   const issues = checks
-    .filter((check) => !check.ok && !["CUDA backend", "Vulkan backend"].includes(check.label))
+    .filter((check) => !check.ok && !["CUDA backend", "Vulkan backend", "Linux backend", "Mac backend"].includes(check.label))
     .map((check) => `${check.label} is missing or not writable.`);
-  if (!backendInstalled) issues.push("No Windows backend binary is installed.");
+  if (!backendInstalled) {
+    issues.push(`No ${osPlatform === "win32" ? "Windows" : osPlatform === "darwin" ? "macOS" : "Linux"} backend binary is installed.`);
+  }
   if (!ports.backend.ok) issues.push(`Port ${PORT_BACKEND} is already in use by another process.`);
 
   return {
@@ -457,8 +495,12 @@ function getBackendOptions() {
 
   const cudaAvailable = osPlatform === "win32" && hasNvidiaGpu() && backendAccepts(BACKEND_PATHS.cuda, "cuda");
   const cudaInstalled = osPlatform === "win32" && fs.existsSync(BACKEND_PATHS.cuda);
-  const vulkanInstalled = osPlatform === "win32" && fs.existsSync(BACKEND_PATHS.vulkan);
-  const vulkanAvailable = osPlatform === "win32" && backendAccepts(BACKEND_PATHS.vulkan, "vulkan");
+  const vulkanInstalled = (osPlatform === "win32" && fs.existsSync(BACKEND_PATHS.vulkan)) ||
+                          (osPlatform === "linux" && fs.existsSync(BACKEND_PATHS.linux));
+  const vulkanAvailable = vulkanInstalled && backendAccepts(
+    osPlatform === "win32" ? BACKEND_PATHS.vulkan : BACKEND_PATHS.linux,
+    "vulkan"
+  );
   const options = [{ id: "cpu", label: "CPU", available: true }];
   if (vulkanAvailable) options.push({ id: "vulkan", label: "Vulkan GPU", available: true });
   if (cudaAvailable) options.push({ id: "cuda", label: "CUDA GPU", available: true });

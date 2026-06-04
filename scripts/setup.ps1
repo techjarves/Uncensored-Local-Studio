@@ -6,7 +6,7 @@ $rootDir     = Split-Path -Parent $scriptDir
 $appDir      = Join-Path $rootDir "app"
 $frontendDir = Join-Path $appDir  "frontend"
 $toolsDir    = Join-Path $appDir  "tools"
-$nodeDir     = Join-Path $toolsDir "node"
+$nodeDir     = Join-Path $toolsDir "node-win"
 $nodeExe     = Join-Path $nodeDir  "node.exe"
 $npmCmd      = Join-Path $nodeDir  "npm.cmd"
 $distDir     = Join-Path $appDir   "dist"
@@ -150,7 +150,7 @@ Print-Header
 $steps = 4
 
 # ── Step 1: Portable Node.js ──────────────────────────────────────────────────
-Print-Step 1 $steps "Setting up portable Node.js (app/tools/node/)"
+Print-Step 1 $steps "Setting up portable Node.js (app/tools/node-win/)"
 
 if ((Test-Path $nodeExe) -and (Test-Path $npmCmd)) {
     $v = & $nodeExe --version
@@ -172,11 +172,11 @@ if ((Test-Path $nodeExe) -and (Test-Path $npmCmd)) {
     $extracted = Get-ChildItem $toolsDir -Directory | Where-Object { $_.Name -like "node-v*" } | Select-Object -First 1
     if ($extracted) {
         if (Test-Path $nodeDir) { Remove-Item $nodeDir -Recurse -Force }
-        Rename-Item $extracted.FullName "node"
+        Rename-Item $extracted.FullName "node-win"
     }
 
     if (-not ((Test-Path $nodeExe) -and (Test-Path $npmCmd))) {
-        Print-Fail "Portable Node.js install is incomplete. Close any running Local AI Image Generator windows, delete app/tools/node, then run setup again."
+        Print-Fail "Portable Node.js install is incomplete. Close any running Local AI Image Generator windows, delete app/tools/node-win, then run setup again."
         Read-Host; exit 1
     }
 
@@ -363,7 +363,7 @@ Write-Host ""
 
 if (-not (Test-Path $npmCmd)) {
     Print-Fail "npm.cmd was not found at $npmCmd"
-    Print-Fail "Close any running Local AI Image Generator windows, delete app/tools/node, then run setup again."
+    Print-Fail "Close any running Local AI Image Generator windows, delete app/tools/node-win, then run setup again."
     Read-Host; exit 1
 }
 
