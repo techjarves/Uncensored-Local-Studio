@@ -505,32 +505,54 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
     };
   };
 
-  // stable-diffusion.cpp server only exposes /v1/images/generations (OpenAI-compat)
-  // Steps, cfg_scale, seed, sample_method are passed in the body and read by the server
+  // txt2img → OpenAI-compatible /v1/images/generations
+  // img2img → Automatic1111-compatible /sdapi/v1/img2img. The OpenAI endpoint
+  // ignores init images, so a base image MUST use the A1111 route.
   const isImg2Img = !!payload.image;
 
-  const genBody = {
-    prompt:           payload.prompt,
-    negative_prompt:  payload.negative_prompt || "",
-    n:                1,
-    size:             `${payload.width}x${payload.height}`,
-    response_format:  "b64_json",
-    // Generation parameters — read by stable-diffusion.cpp from the request body
-    steps:            payload.steps,
-    cfg_scale:        payload.cfg_scale,
-    seed:             payload.seed,
-    sample_method:    payload.sampler || "euler_a",
-  };
-
-  // img2img extra fields
+  let endpoint;
+  let genBody;
   if (isImg2Img) {
-    genBody.init_images        = [payload.image];
-    genBody.denoising_strength = payload.denoising_strength || 0.7;
+    // A1111 expects raw base64 (no data: prefix) in init_images.
+    const initBase64 = String(payload.image).replace(/^data:[^;]+;base64,/, "");
+    endpoint = `${baseUrl}/sdapi/v1/img2img`;
+    genBody = {
+      init_images:        [initBase64],
+      prompt:             payload.prompt,
+      negative_prompt:    payload.negative_prompt || "",
+      denoising_strength: payload.denoising_strength || 0.7,
+      steps:              payload.steps,
+      cfg_scale:          payload.cfg_scale,
+      seed:               payload.seed,
+      width:              payload.width,
+      height:             payload.height,
+      // include both spellings: A1111 uses sampler_name, sd.cpp also reads sample_method
+      sampler_name:       payload.sampler || "euler_a",
+      sample_method:      payload.sampler || "euler_a",
+      batch_size:         1,
+      n_iter:             1,
+      send_images:        true,
+      save_images:        false,
+    };
+  } else {
+    endpoint = `${baseUrl}/v1/images/generations`;
+    genBody = {
+      prompt:           payload.prompt,
+      negative_prompt:  payload.negative_prompt || "",
+      n:                1,
+      size:             `${payload.width}x${payload.height}`,
+      response_format:  "b64_json",
+      // Generation parameters — read by stable-diffusion.cpp from the request body
+      steps:            payload.steps,
+      cfg_scale:        payload.cfg_scale,
+      seed:             payload.seed,
+      sample_method:    payload.sampler || "euler_a",
+    };
   }
 
   // Attempt real HTTP call
   try {
-    const response = await fetch(`${baseUrl}/v1/images/generations`, {
+    const response = await fetch(endpoint, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       signal:  signal,
