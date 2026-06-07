@@ -687,6 +687,24 @@ async function startBackend(settings = {}) {
     return;
   }
 
+  const modelLoadIssue = getModelLoadIssue(currentSettings.model);
+  if (modelLoadIssue) {
+    backendError = modelLoadIssue;
+    backendLoadState = {
+      active: false,
+      phase: "Model load blocked",
+      progress: 0,
+      current: 0,
+      total: 0,
+      speed: "",
+      model: path.basename(currentSettings.model),
+      backendMode: "",
+      backendBinary: "",
+      device: "",
+    };
+    throw new Error(modelLoadIssue);
+  }
+
   PORT_BACKEND = await findAvailableBackendPort();
 
   const resolvedBackendType = resolveBackendType(currentSettings.useGpu, currentSettings.backendType);
@@ -856,7 +874,12 @@ async function startBackend(settings = {}) {
       currentSettings.backendMode = "Vulkan GPU";
     }
     if (cleanOutput.includes("[ERROR]")) {
-      backendError = cleanOutput.trim();
+      const nextError = describeBackendError(cleanOutput.trim(), currentSettings.model);
+      const hasSpecificFileError = String(backendError || "").includes("incomplete or corrupted");
+      const isGenericContextError = cleanOutput.includes("new_sd_ctx_t failed");
+      if (!(hasSpecificFileError && isGenericContextError)) {
+        backendError = nextError;
+      }
     }
   });
   backendProc.on("exit", code => {
@@ -961,6 +984,8 @@ function startModelDownload(url, overrideFilename = null) {
   }
 
   const destPath = path.join(MODELS, filename);
+  const tempPath = `${destPath}.part`;
+  try { fs.unlinkSync(tempPath); } catch (_) {}
   downloadState = {
     active: true,
     filename: filename,
@@ -974,7 +999,26 @@ function startModelDownload(url, overrideFilename = null) {
 
   console.log(`  [download] Starting download of ${filename} from ${url}`);
 
-  const fileStream = fs.createWriteStream(destPath);
+  let downloadFinalized = false;
+  const failDownload = (message, err = null) => {
+    if (downloadFinalized) return;
+    downloadFinalized = true;
+    downloadState.active = false;
+    downloadState.error = message;
+    if (err) {
+      console.error("  [download]", message, err);
+    } else {
+      console.error("  [download] Failed:", message);
+    }
+    try { fileStream.close(); } catch (_) {}
+    try { fs.unlinkSync(tempPath); } catch (_) {}
+    activeDownload = null;
+  };
+
+  const fileStream = fs.createWriteStream(tempPath);
+  fileStream.on("error", (err) => {
+    failDownload(`Could not write ${filename}: ${err.message}`, err);
+  });
   
   const client = url.startsWith("https") ? https : http;
   const request = client.get(url, {
@@ -984,16 +1028,12 @@ function startModelDownload(url, overrideFilename = null) {
       "Referer": "https://huggingface.co/",
     },
   }, (response) => {
-    activeDownload = { request, fileStream, destPath };
+    activeDownload = { request, fileStream, destPath, tempPath };
     // Handle redirects (HuggingFace resolve URLs redirect to Cloudfront/S3)
     if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
       const redirectUrl = response.headers.location ? new URL(response.headers.location, url).toString() : "";
       if (!redirectUrl) {
-        downloadState.active = false;
-        downloadState.error = "Redirect response did not include a Location header";
-        fileStream.close();
-        try { fs.unlinkSync(destPath); } catch (_) {}
-        activeDownload = null;
+        failDownload("Redirect response did not include a Location header");
         return;
       }
       console.log(`  [download] Redirected to ${redirectUrl}`);
@@ -1003,7 +1043,7 @@ function startModelDownload(url, overrideFilename = null) {
       request.destroy();
       
       fileStream.close();
-      try { fs.unlinkSync(destPath); } catch (_) {}
+      try { fs.unlinkSync(tempPath); } catch (_) {}
       activeDownload = null;
       downloadState.active = false;
       startModelDownload(redirectUrl, filename);
@@ -1011,12 +1051,7 @@ function startModelDownload(url, overrideFilename = null) {
     }
 
     if (response.statusCode !== 200) {
-      downloadState.active = false;
-      downloadState.error = describeDownloadHttpError(response.statusCode, url, response.headers);
-      console.error(`  [download] Failed: ${downloadState.error}`);
-      fileStream.close();
-      try { fs.unlinkSync(destPath); } catch (_) {}
-      activeDownload = null;
+      failDownload(describeDownloadHttpError(response.statusCode, url, response.headers));
       return;
     }
 
@@ -1053,25 +1088,50 @@ function startModelDownload(url, overrideFilename = null) {
       }
     });
 
+    response.on("aborted", () => {
+      failDownload(`Download interrupted before ${filename} finished. Delete and retry the model download.`);
+    });
+
+    response.on("error", (err) => {
+      failDownload(`Download stream failed before ${filename} finished. Delete and retry the model download.`, err);
+    });
+
     response.on("end", () => {
-      fileStream.end();
-      downloadState.active = false;
-      downloadState.progress = 100;
-      downloadState.downloadedBytes = downloadedBytes;
-      activeDownload = null;
-      console.log(`  [download] Completed download of ${filename}`);
+      if (downloadFinalized) return;
+      if (totalBytes > 0 && downloadedBytes !== totalBytes) {
+        failDownload(`Download incomplete for ${filename}: received ${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}. Delete and retry the model download.`);
+        return;
+      }
+
+      fileStream.end(() => {
+        try {
+          if (totalBytes > 0) {
+            const writtenBytes = fs.statSync(tempPath).size;
+            if (writtenBytes !== totalBytes) {
+              failDownload(`Download incomplete for ${filename}: wrote ${formatBytes(writtenBytes)} of ${formatBytes(totalBytes)}. Delete and retry the model download.`);
+              return;
+            }
+          }
+          try { fs.unlinkSync(destPath); } catch (_) {}
+          fs.renameSync(tempPath, destPath);
+          downloadState.active = false;
+          downloadFinalized = true;
+          downloadState.progress = 100;
+          downloadState.downloadedBytes = downloadedBytes;
+          downloadState.error = null;
+          activeDownload = null;
+          console.log(`  [download] Completed download of ${filename}`);
+        } catch (err) {
+          failDownload(`Could not finalize ${filename}: ${err.message}`);
+        }
+      });
     });
   });
 
   request.on("error", (err) => {
-    downloadState.active = false;
-    downloadState.error = err.message;
-    console.error("  [download] Request error:", err);
-    fileStream.close();
-    try { fs.unlinkSync(destPath); } catch (_) {}
-    activeDownload = null;
+    failDownload(err.message, err);
   });
-  activeDownload = { request, fileStream, destPath };
+  activeDownload = { request, fileStream, destPath, tempPath };
 }
 
 function cancelModelDownload() {
@@ -1082,9 +1142,9 @@ function cancelModelDownload() {
   if (activeDownload) {
     try { activeDownload.request.destroy(new Error("Download cancelled by user")); } catch (_) {}
     try { activeDownload.fileStream.destroy(); } catch (_) {}
-    try { fs.unlinkSync(activeDownload.destPath); } catch (_) {}
+    try { fs.unlinkSync(activeDownload.tempPath || activeDownload.destPath); } catch (_) {}
   } else if (filename) {
-    try { fs.unlinkSync(path.join(MODELS, filename)); } catch (_) {}
+    try { fs.unlinkSync(`${path.join(MODELS, filename)}.part`); } catch (_) {}
   }
   activeDownload = null;
   downloadState = {
@@ -1121,6 +1181,56 @@ function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const idx = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
   return `${(value / (1024 ** idx)).toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+}
+
+function getModelLoadIssue(modelPath) {
+  const filename = path.basename(modelPath || "");
+  const lower = filename.toLowerCase();
+  const ext = path.extname(lower);
+  if (!modelPath || !fs.existsSync(modelPath)) {
+    return `Model file not found: ${filename || "unknown model"}`;
+  }
+
+  const stats = fs.statSync(modelPath);
+  if (stats.size < 128 * 1024 * 1024) {
+    return `${filename} is too small to be a complete image model (${formatBytes(stats.size)}). Delete it and download/import it again.`;
+  }
+
+  if (ext === ".gguf") {
+    const requiresSeparateComponents =
+      lower.includes("z_image") ||
+      lower.includes("z-image") ||
+      lower.includes("zimage") ||
+      lower.includes("qwen") ||
+      lower.includes("hidream") ||
+      lower.includes("hunyuan") ||
+      lower.includes("wan") ||
+      lower.includes("flux");
+
+    if (requiresSeparateComponents) {
+      return `${filename} looks like a multi-file diffusion GGUF. This app currently loads single-file SD 1.5/SDXL checkpoints directly. Models like Z-Image, Qwen, Flux, HiDream, Hunyuan, and Wan usually need extra files such as VAE/text encoders and must be launched with --diffusion-model instead of --model.`;
+    }
+  }
+
+  return null;
+}
+
+function describeBackendError(rawError, modelPath) {
+  const raw = String(rawError || "").trim();
+  const filename = path.basename(modelPath || "");
+  const lower = filename.toLowerCase();
+
+  if (raw.includes("read tensor data failed") || raw.includes("load tensors from file failed")) {
+    return `${raw}\n\n${filename || "The selected model"} is present but appears incomplete or corrupted. Delete it from Local Models and download/import it again.`;
+  }
+
+  if (!raw.includes("new_sd_ctx_t failed")) return raw;
+
+  if (lower.endsWith(".gguf")) {
+    return `${raw}\n\n${filename} could not be loaded as a single checkpoint. Some GGUF files are only the diffusion part of a larger workflow and need separate VAE/text encoder files. Try a recommended SD 1.5/SDXL model, or re-download/import the file if this is meant to be a single-file SD/SDXL GGUF.`;
+  }
+
+  return `${raw}\n\nThe backend could not create the model context. Common causes are a corrupt/incomplete model file, unsupported checkpoint type, or not enough free RAM/VRAM. Delete and re-download the model, then try CPU or Vulkan mode at 512x512.`;
 }
 
 function getModelInfo(filename) {
