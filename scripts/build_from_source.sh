@@ -91,6 +91,10 @@ SO_PATH=$(find . -name "libstable-diffusion.so" | head -n 1)
 if [ -n "$SO_PATH" ]; then
     cp "$SO_PATH" "$BACKEND_DIR/cpu/"
     echo "Copied libstable-diffusion.so to CPU directory."
+    chmod +x "$BACKEND_DIR/cpu/sd-cpu" "$BACKEND_DIR/cpu/sd-server-cpu" 2>/dev/null || true
+    if [ -f "$BACKEND_DIR/cpu/sd-cli-cpu" ]; then
+        chmod +x "$BACKEND_DIR/cpu/sd-cli-cpu" 2>/dev/null || true
+    fi
 else
     echo "WARNING: libstable-diffusion.so not found for CPU build!"
 fi
@@ -124,6 +128,10 @@ if rm -rf build-vulkan && mkdir build-vulkan && cd build-vulkan && \
     else
         echo "WARNING: libstable-diffusion.so not found for Vulkan build!"
     fi
+    chmod +x "$BACKEND_DIR/vulkan/sd-vulkan" "$BACKEND_DIR/vulkan/sd-server-vulkan" 2>/dev/null || true
+    if [ -f "$BACKEND_DIR/vulkan/sd-cli-vulkan" ]; then
+        chmod +x "$BACKEND_DIR/vulkan/sd-cli-vulkan" 2>/dev/null || true
+    fi
 else
     echo "WARNING: Vulkan backend build failed. Bypassing Vulkan backend compilation..."
 fi
@@ -152,6 +160,10 @@ SO_PATH_CUDA=$(find . -name "libstable-diffusion.so" | head -n 1)
 if [ -n "$SO_PATH_CUDA" ]; then
     cp "$SO_PATH_CUDA" "$BACKEND_DIR/cuda/"
     echo "Copied libstable-diffusion.so to CUDA directory."
+    chmod +x "$BACKEND_DIR/cuda/sd-cuda" "$BACKEND_DIR/cuda/sd-server-cuda" 2>/dev/null || true
+    if [ -f "$BACKEND_DIR/cuda/sd-cli-cuda" ]; then
+        chmod +x "$BACKEND_DIR/cuda/sd-cli-cuda" 2>/dev/null || true
+    fi
 else
     echo "WARNING: libstable-diffusion.so not found for CUDA build!"
 fi

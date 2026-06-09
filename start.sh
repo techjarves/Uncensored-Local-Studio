@@ -53,9 +53,11 @@ if [[ "$PLATFORM" == "Darwin" ]]; then
     SETUP_REASON="No macOS Metal backend binary is installed."
   fi
 else
-  # At minimum we need CPU or Vulkan backend on Linux
-  if [[ ! -f "$CPU_BACKEND_PATH" && ! -f "$BACKEND_PATH" ]]; then
-    SETUP_REASON="No Linux backend binary is installed."
+  # At minimum we need CPU or Vulkan backend on Linux, and both CLI and server binaries must be executable
+  CPU_SERVER_PATH="$APP_DIR/backend/linux/cpu/sd-server-cpu"
+  VULKAN_SERVER_PATH="$APP_DIR/backend/linux/vulkan/sd-server-vulkan"
+  if [[ ! -x "$CPU_BACKEND_PATH" || ! -x "$CPU_SERVER_PATH" ]] && [[ ! -x "$BACKEND_PATH" || ! -x "$VULKAN_SERVER_PATH" ]]; then
+    SETUP_REASON="Linux backend binaries are missing or not executable."
   fi
 fi
 

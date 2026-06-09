@@ -291,7 +291,7 @@ else
 
 # CPU backend (always)
 CPU_BACKEND_DIR="$BACKEND_DIR/cpu"
-if [[ ! -f "$CPU_BACKEND_DIR/sd-cpu" ]]; then
+if [[ ! -f "$CPU_BACKEND_DIR/sd-cpu" || ! -f "$CPU_BACKEND_DIR/sd-server-cpu" ]]; then
   mkdir -p "$CPU_BACKEND_DIR"
   CPU_ZIP="$TOOLS_DIR/sd-cpu.zip"
   download_file "$SD_BASE_URL/sd-master-${SD_SHORT_HASH}-bin-Linux-Ubuntu-24.04-x86_64.zip" "$CPU_ZIP" "stable-diffusion.cpp CPU Backend (Linux x86_64)"
@@ -299,15 +299,15 @@ if [[ ! -f "$CPU_BACKEND_DIR/sd-cpu" ]]; then
   rm -f "$CPU_ZIP"
   copy_binaries_from_extracted "$CPU_BACKEND_DIR/extracted" "$CPU_BACKEND_DIR" "sd-cpu" "sd-server-cpu"
   rm -rf "$CPU_BACKEND_DIR/extracted"
-  chmod +x "$CPU_BACKEND_DIR/sd-cpu" 2>/dev/null || true
   print_ok "CPU backend installed."
 else
   print_ok "CPU backend already ready."
 fi
+chmod +x "$CPU_BACKEND_DIR/sd-cpu" "$CPU_BACKEND_DIR/sd-server-cpu" 2>/dev/null || true
 
 # Vulkan backend (always - cross-vendor GPU fallback)
 VULKAN_BACKEND_DIR="$BACKEND_DIR/vulkan"
-if [[ ! -f "$VULKAN_BACKEND_DIR/sd-vulkan" ]]; then
+if [[ ! -f "$VULKAN_BACKEND_DIR/sd-vulkan" || ! -f "$VULKAN_BACKEND_DIR/sd-server-vulkan" ]]; then
   mkdir -p "$VULKAN_BACKEND_DIR"
   VULKAN_ZIP="$TOOLS_DIR/sd-vulkan.zip"
   download_file "$SD_BASE_URL/sd-master-${SD_SHORT_HASH}-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip" "$VULKAN_ZIP" "stable-diffusion.cpp Vulkan Backend (Linux x86_64)"
@@ -315,16 +315,16 @@ if [[ ! -f "$VULKAN_BACKEND_DIR/sd-vulkan" ]]; then
   rm -f "$VULKAN_ZIP"
   copy_binaries_from_extracted "$VULKAN_BACKEND_DIR/extracted" "$VULKAN_BACKEND_DIR" "sd-vulkan" "sd-server-vulkan"
   rm -rf "$VULKAN_BACKEND_DIR/extracted"
-  chmod +x "$VULKAN_BACKEND_DIR/sd-vulkan" 2>/dev/null || true
   print_ok "Vulkan backend installed."
 else
   print_ok "Vulkan backend already ready."
 fi
+chmod +x "$VULKAN_BACKEND_DIR/sd-vulkan" "$VULKAN_BACKEND_DIR/sd-server-vulkan" 2>/dev/null || true
 
 # ROCm backend (optional --max-perf, or auto-detected AMD)
 ROCM_BACKEND_DIR="$BACKEND_DIR/rocm"
 if [[ $MAX_PERF -eq 1 ]] && [[ "$VENDOR" == "amd" || "$VENDOR" == "" ]]; then
-  if [[ ! -f "$ROCM_BACKEND_DIR/sd-rocm" ]]; then
+  if [[ ! -f "$ROCM_BACKEND_DIR/sd-rocm" || ! -f "$ROCM_BACKEND_DIR/sd-server-rocm" ]]; then
     mkdir -p "$ROCM_BACKEND_DIR"
     ROCM_ZIP="$TOOLS_DIR/sd-rocm.zip"
     print_warn "ROCm backend is ~1.2 GB. This may take a while..."
@@ -333,11 +333,11 @@ if [[ $MAX_PERF -eq 1 ]] && [[ "$VENDOR" == "amd" || "$VENDOR" == "" ]]; then
     rm -f "$ROCM_ZIP"
     copy_binaries_from_extracted "$ROCM_BACKEND_DIR/extracted" "$ROCM_BACKEND_DIR" "sd-rocm" "sd-server-rocm"
     rm -rf "$ROCM_BACKEND_DIR/extracted"
-    chmod +x "$ROCM_BACKEND_DIR/sd-rocm" 2>/dev/null || true
     print_ok "ROCm backend installed."
   else
     print_ok "ROCm backend already ready."
   fi
+  chmod +x "$ROCM_BACKEND_DIR/sd-rocm" "$ROCM_BACKEND_DIR/sd-server-rocm" 2>/dev/null || true
 fi
 
 # CUDA backend on Linux is intentionally disabled.
