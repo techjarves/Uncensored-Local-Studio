@@ -136,6 +136,7 @@ Typical generation times for an image with **20 steps** (e.g. 512x512 resolution
 *   **Port Conflicts:** The frontend uses `1420` by default. The backend tries `8080` first, then automatically falls back to a free port if `8080` is already busy.
 *   **Linux backends fail to start with `GLIBC_2.38' not found`:** The prebuilt binaries require glibc 2.38+ (Ubuntu 24.04). Upgrade your distribution or build stable-diffusion.cpp from source (see below).
 *   **Linux ROCm not loading:** Make sure your AMD GPU and kernel are compatible with ROCm 7.13. The app will automatically fall back to Vulkan if ROCm cannot initialize.
+*   **Windows exits with code `3221225781`:** This is `0xC0000135`, which means Windows could not load a required backend DLL. For AMD/Intel Vulkan, update the GPU driver with Vulkan support, then rerun setup so `app/backend/win/vulkan/` is repaired. For NVIDIA CUDA, update the NVIDIA driver and rerun setup so CUDA runtime DLLs are restored.
 *   **Generation shows "server is not responding or crashed":** The backend process exited. Check the terminal where you ran `./start.sh` for the exact error (common causes are glibc mismatch, missing Vulkan drivers, or out-of-memory).
 
 ---
