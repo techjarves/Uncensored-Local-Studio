@@ -339,7 +339,8 @@ export async function listModelsFromDisk() {
 }
 
 // Generate image (T2I / I2I)
-// Handles API calls to sd-server or mocks them if server is unreachable
+// Handles API calls to sd-server. If the server is unreachable or returns an error,
+// we surface that error to the UI instead of silently returning a fake placeholder.
 export async function generateImage(prompt, negativePrompt, constraints, activeModelName, inputImageBase64, onProgress, signal) {
   console.log("Initiating image generation:", { prompt, negativePrompt, constraints, activeModelName });
   const startTime = Date.now();
@@ -360,173 +361,6 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
     denoising_strength: constraints.denoisingStrength || 0.7,
   };
 
-  // Mock generation helper for offline/browser execution
-  const runMockGeneration = async () => {
-    // Simulate generation steps progress
-    const stepsCount = payload.steps;
-    for (let i = 1; i <= stepsCount; i++) {
-      if (signal && signal.aborted) {
-        throw new DOMException("The user aborted a request.", "AbortError");
-      }
-      await new Promise(r => setTimeout(r, (3000 / stepsCount))); // 3 seconds total
-      if (onProgress) {
-        onProgress(Math.round((i / stepsCount) * 100));
-      }
-    }
-
-    const pLower = prompt.toLowerCase();
-    const seedVal = Math.abs(payload.seed) || Math.floor(Math.random() * 1000);
-
-    // Generate a beautiful, local vector SVG representing the requested subject, completely offline-compatible
-    const primaryBg = "#0F172A"; // dark premium background
-    let gradientStart = "#3B82F6";
-    let gradientEnd = "#8B5CF6";
-    let sceneShapes = "";
-    let keywordLabel = "Abstract Generation";
-
-    if (pLower.includes("moon") || pLower.includes("space") || pLower.includes("astronomy") || pLower.includes("sky")) {
-      gradientStart = "#1E293B";
-      gradientEnd = "#0F172A";
-      keywordLabel = "Luminous Moon in Starry Sky";
-      sceneShapes = `
-        <!-- Stars -->
-        <circle cx="80" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
-        <circle cx="160" cy="60" r="1" fill="#ffffff" opacity="0.5"/>
-        <circle cx="280" cy="120" r="2" fill="#ffffff" opacity="0.8"/>
-        <circle cx="360" cy="80" r="1.5" fill="#ffffff" opacity="0.4"/>
-        <circle cx="440" cy="150" r="1" fill="#ffffff" opacity="0.7"/>
-        <circle cx="400" cy="280" r="2" fill="#ffffff" opacity="0.9"/>
-        <circle cx="100" cy="300" r="1.5" fill="#ffffff" opacity="0.5"/>
-        <!-- Moon -->
-        <circle cx="256" cy="220" r="90" fill="url(#moonGrad)" />
-        <circle cx="226" cy="190" r="80" fill="#0F172A" />
-      `;
-    } else if (pLower.includes("cat") || pLower.includes("kitten") || pLower.includes("feline")) {
-      gradientStart = "#4F46E5";
-      gradientEnd = "#7C3AED";
-      keywordLabel = "Stylized Cat Portrait";
-      sceneShapes = `
-        <!-- Cat head & ears -->
-        <polygon points="176,280 146,160 216,210" fill="#312E81" />
-        <polygon points="336,280 366,160 296,210" fill="#312E81" />
-        <circle cx="256" cy="270" r="80" fill="#4338CA" />
-        <!-- Eyes -->
-        <ellipse cx="226" cy="260" rx="14" ry="8" fill="#10B981" />
-        <ellipse cx="286" cy="260" rx="14" ry="8" fill="#10B981" />
-        <circle cx="226" cy="260" r="4" fill="#000" />
-        <circle cx="286" cy="260" r="4" fill="#000" />
-        <!-- Nose & Whiskers -->
-        <polygon points="256,285 248,275 264,275" fill="#F43F5E" />
-        <line x1="226" y1="290" x2="166" y2="280" stroke="#E2E8F0" stroke-width="2" />
-        <line x1="226" y1="295" x2="156" y2="295" stroke="#E2E8F0" stroke-width="2" />
-        <line x1="286" y1="290" x2="346" y2="280" stroke="#E2E8F0" stroke-width="2" />
-        <line x1="286" y1="295" x2="356" y2="295" stroke="#E2E8F0" stroke-width="2" />
-      `;
-    } else if (pLower.includes("dog") || pLower.includes("puppy") || pLower.includes("canine")) {
-      gradientStart = "#D97706";
-      gradientEnd = "#B45309";
-      keywordLabel = "Friendly Dog Portrait";
-      sceneShapes = `
-        <!-- Dog head & floppy ears -->
-        <ellipse cx="166" cy="260" rx="20" ry="60" fill="#78350F" />
-        <ellipse cx="346" cy="260" rx="20" ry="60" fill="#78350F" />
-        <circle cx="256" cy="250" r="70" fill="#92400E" />
-        <ellipse cx="256" cy="280" rx="40" ry="30" fill="#D97706" />
-        <!-- Eyes -->
-        <circle cx="226" cy="230" r="10" fill="#1E293B" />
-        <circle cx="286" cy="230" r="10" fill="#1E293B" />
-        <circle cx="222" cy="226" r="3" fill="#ffffff" />
-        <circle cx="282" cy="226" r="3" fill="#ffffff" />
-        <!-- Nose -->
-        <ellipse cx="256" cy="275" rx="16" ry="10" fill="#1E293B" />
-      `;
-    } else if (pLower.includes("city") || pLower.includes("cyberpunk") || pLower.includes("tokyo") || pLower.includes("neon")) {
-      gradientStart = "#111827";
-      gradientEnd = "#311042";
-      keywordLabel = "Neon Cyberpunk Skyline";
-      sceneShapes = `
-        <!-- Skyline -->
-        <rect x="60" y="160" width="80" height="352" fill="#1F2937" opacity="0.9"/>
-        <rect x="180" y="100" width="100" height="412" fill="#111827" />
-        <rect x="320" y="200" width="120" height="312" fill="#1F2937" opacity="0.85"/>
-        <rect x="100" y="240" width="110" height="272" fill="#374151" opacity="0.6"/>
-        <!-- Neon details -->
-        <line x1="230" y1="100" x2="230" y2="40" stroke="#EC4899" stroke-width="3" />
-        <rect x="200" y="140" width="60" height="15" fill="#10B981" opacity="0.7"/>
-        <rect x="200" y="170" width="60" height="15" fill="#10B981" opacity="0.7"/>
-        <rect x="200" y="200" width="60" height="15" fill="#3B82F6" opacity="0.7"/>
-        <rect x="70" y="200" width="15" height="100" fill="#F59E0B" opacity="0.5"/>
-        <rect x="340" y="250" width="20" height="150" fill="#EF4444" opacity="0.6"/>
-      `;
-    } else if (pLower.includes("car") || pLower.includes("vehicle") || pLower.includes("supercar")) {
-      gradientStart = "#DC2626";
-      gradientEnd = "#991B1B";
-      keywordLabel = "Futuristic Concept Car";
-      sceneShapes = `
-        <!-- Road / Perspective grid -->
-        <line x1="256" y1="350" x2="0" y2="512" stroke="#4B5563" stroke-width="3" />
-        <line x1="256" y1="350" x2="512" y2="512" stroke="#4B5563" stroke-width="3" />
-        <!-- Car body -->
-        <polygon points="126,380 256,330 386,380 346,440 166,440" fill="#EF4444" />
-        <polygon points="176,370 256,340 336,370 326,390 186,390" fill="#1E293B" opacity="0.9" />
-        <!-- Headlights -->
-        <polygon points="136,410 176,415 166,425 136,420" fill="#FBBF24" />
-        <polygon points="376,410 336,415 346,425 376,420" fill="#FBBF24" />
-        <!-- Wheels -->
-        <ellipse cx="156" cy="440" rx="30" ry="15" fill="#111" />
-        <ellipse cx="356" cy="440" rx="30" ry="15" fill="#111" />
-      `;
-    } else {
-      // General gradient waves
-      gradientStart = "#06B6D4";
-      gradientEnd = "#0891B2";
-      keywordLabel = "Abstract Creative Concept";
-      sceneShapes = `
-        <path d="M0,256 C150,150 350,350 512,256 L512,512 L0,512 Z" fill="#0891B2" opacity="0.4" />
-        <path d="M0,350 C200,200 300,450 512,350 L512,512 L0,512 Z" fill="#0E7490" opacity="0.6" />
-        <circle cx="380" cy="180" r="50" fill="#F59E0B" opacity="0.8" />
-      `;
-    }
-
-    const svgString = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-        <defs>
-          <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="${gradientStart}" />
-            <stop offset="100%" stop-color="${gradientEnd}" />
-          </linearGradient>
-          <linearGradient id="moonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FEF08A" />
-            <stop offset="100%" stop-color="#FDE047" />
-          </linearGradient>
-        </defs>
-        
-        <!-- Background -->
-        <rect width="512" height="512" fill="url(#bgGrad)" />
-        
-        <!-- Shapes -->
-        ${sceneShapes}
-        
-        <!-- Premium UI Overlay Frame -->
-        <rect x="20" y="20" width="472" height="472" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.15" rx="8"/>
-        
-        <!-- Prompt & Details text -->
-        <rect x="40" y="410" width="432" height="62" fill="#0F172A" opacity="0.85" rx="6" />
-        <text x="60" y="435" fill="#F1F5F9" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="bold">${keywordLabel}</text>
-        <text x="60" y="455" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11">Seed: ${seedVal} • Steps: ${payload.steps} • Scale: ${payload.cfg_scale}</text>
-      </svg>
-    `;
-
-    const base64Svg = btoa(unescape(encodeURIComponent(svgString)));
-    const mockImageUrl = `data:image/svg+xml;base64,${base64Svg}`;
-    const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
-    
-    return {
-      image: mockImageUrl,
-      seed: payload.seed,
-      duration_sec: durationSec,
-    };
-  };
 
   // txt2img uses /v1/images/generations; img2img uses /sdapi/v1/img2img.
   const isImg2Img = !!payload.image;
@@ -601,11 +435,12 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
     }
   } catch (err) {
     if (err.name === "AbortError" || err.message.startsWith("Generation failed")) throw err;
-    console.warn("Could not reach local server. Falling back to simulation mode.", err);
+    console.warn("Could not reach local server.", err);
+    throw new Error(
+      "The image generation server is not responding or crashed. " +
+      "Try restarting the backend from Model Manager, or check the terminal for a backend error."
+    );
   }
-
-  // Fallback to mock generation if server is offline/not reachable
-  return await runMockGeneration();
 }
 
 // Perform model file import (copy to USB in Tauri, simulated in Web mode)
