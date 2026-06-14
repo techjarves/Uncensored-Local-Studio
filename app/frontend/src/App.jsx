@@ -97,6 +97,8 @@ function App() {
     width: 1024,
     height: 1024,
     steps: 4,          // Recommended default steps for Flux.1 Schnell/Lightning
+    npuSteps: 4,
+    standardSteps: 20,
     cfgScale: 1.0,     // Recommended default CFG for Flux.1 Schnell
     sampler: "euler_a",
     seed: -1,
@@ -277,10 +279,22 @@ function App() {
   useEffect(() => {
     if (activeModel) {
       const name = activeModel.toLowerCase();
-      if (name.includes("flux") || name.includes("schnell")) {
+      if (name.includes("lcm-dreamshaper-v7-fp16")) {
         setConstraints((prev) => ({
           ...prev,
           steps: 4,
+          npuSteps: 4,
+          cfgScale: 1.0,
+          width: 512,
+          height: 512,
+          backendType: "openvino-npu",
+          useGpu: true,
+        }));
+      } else if (name.includes("flux") || name.includes("schnell")) {
+        setConstraints((prev) => ({
+          ...prev,
+          steps: 4,
+          standardSteps: 4,
           cfgScale: 1.0,
           width: 1024,
           height: 1024,
@@ -289,6 +303,7 @@ function App() {
         setConstraints((prev) => ({
           ...prev,
           steps: 4,
+          standardSteps: 4,
           cfgScale: 1.5,
           width: 1024,
           height: 1024,
@@ -297,6 +312,7 @@ function App() {
         setConstraints((prev) => ({
           ...prev,
           steps: 25,
+          standardSteps: 25,
           cfgScale: 7.0,
           width: 512,
           height: 512,
@@ -305,6 +321,7 @@ function App() {
         setConstraints((prev) => ({
           ...prev,
           steps: 20,
+          standardSteps: 20,
           cfgScale: 4.5,
           width: 1024,
           height: 1024,
@@ -314,6 +331,7 @@ function App() {
         setConstraints((prev) => ({
           ...prev,
           steps: 20,
+          standardSteps: 20,
           cfgScale: 7.0,
           width: 512,
           height: 512,
@@ -353,6 +371,7 @@ function App() {
             serverRunning={serverRunning}
             setServerRunning={setServerRunning}
             constraints={constraints}
+            backendOptions={backendOptions}
             showAlert={showAlert}
             showConfirm={showConfirm}
           />
@@ -365,6 +384,11 @@ function App() {
             activeModel={activeModel}
             specs={specs}
             backendOptions={backendOptions}
+            serverRunning={serverRunning}
+            setServerRunning={setServerRunning}
+            setActiveModel={setActiveModel}
+            showAlert={showAlert}
+            showConfirm={showConfirm}
           />
         );
       default:

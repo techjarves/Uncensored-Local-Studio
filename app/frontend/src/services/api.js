@@ -48,8 +48,12 @@ export function normalizeModel(model) {
   }
   return {
     filename: model?.filename || model?.name || "",
+    name: model?.name || model?.filename || "",
     sizeBytes: Number(model?.sizeBytes || 0),
     size: model?.size || (model?.sizeBytes ? formatBytes(model.sizeBytes) : "Unknown"),
+    format: model?.format || "Local Weights File",
+    backendType: model?.backendType || "",
+    resolution: model?.resolution || "",
   };
 }
 
@@ -254,6 +258,8 @@ export async function startServer(modelPath, constraints) {
         threads:  constraints.threads  || 8,
         use_gpu:  constraints.useGpu !== false,
         backend_type: constraints.backendType || (constraints.useGpu === false ? "cpu" : "auto"),
+        width: constraints.width || 512,
+        height: constraints.height || 512,
         vae_tiling: constraints.vaeTiling !== false,
         vae_on_cpu: constraints.vaeOnCpu === true,
         flash_attn: constraints.useFlashAttn !== false,
@@ -331,12 +337,32 @@ export async function deleteGeneratedOutputs(outputs) {
 // List model files from the models folder (via management API in web mode)
 export async function listModelsFromDisk() {
   try {
-    const r = await fetch("/api/models");
-    const data = await r.json();
-    return (data.models || []).map(normalizeModel);
+    const [modelRes, openvino] = await Promise.all([
+      fetch("/api/models"),
+      listOpenVinoModels().catch(() => ({ supported: false, models: [] })),
+    ]);
+    const data = await modelRes.json();
+    const normalModels = (data.models || []).map(normalizeModel);
+    const openvinoModels = openvino.supported
+      ? (openvino.models || []).filter((model) => model.installed).map((model) => normalizeModel({
+          filename: model.id,
+          name: model.name,
+          sizeBytes: model.sizeBytes,
+          size: model.size,
+          format: "OpenVINO",
+          backendType: "openvino-npu",
+          resolution: model.resolution,
+        }))
+      : [];
+    return [...normalModels, ...openvinoModels];
   } catch (_) {
     return [];
   }
+}
+
+export async function listOpenVinoModels() {
+  const res = await fetch("/api/openvino-models");
+  return await readJsonResponse(res, "The local server returned invalid OpenVINO model data.");
 }
 
 // Generate image (T2I / I2I)
@@ -346,8 +372,6 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
   console.log("Initiating image generation:", { prompt, negativePrompt, constraints, activeModelName });
   const startTime = Date.now();
 
-  const baseUrl = await getBackendBaseUrl();
-  
   // Prepare payload based on standard stable-diffusion.cpp REST endpoint schemas
   const payload = {
     prompt: prompt,
@@ -361,6 +385,45 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
     image: inputImageBase64 || null, // Image to image source (base64)
     denoising_strength: constraints.denoisingStrength || 0.7,
   };
+
+  if (constraints.backendType === "openvino-npu") {
+    if (inputImageBase64) {
+      throw new Error("OpenVINO NPU test mode currently supports text-to-image only.");
+    }
+    const response = await fetch("/api/openvino-generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        prompt: payload.prompt,
+        negative_prompt: payload.negative_prompt,
+        steps: payload.steps,
+        cfg_scale: payload.cfg_scale,
+        seed: payload.seed,
+        width: payload.width,
+        height: payload.height,
+      }),
+    });
+    const data = await readJsonResponse(response, "The local server returned an invalid OpenVINO generation response.");
+    const imgB64 = data?.data?.[0]?.b64_json;
+    if (!imgB64) throw new Error("OpenVINO generation did not return an image.");
+    const normalizedB64 = String(imgB64).replace(/^data:[^;]+;base64,/, "");
+    const header = atob(normalizedB64.slice(0, 24));
+    const isPng = header.charCodeAt(0) === 0x89 && header.slice(1, 4) === "PNG";
+    const isJpeg = header.charCodeAt(0) === 0xff && header.charCodeAt(1) === 0xd8 && header.charCodeAt(2) === 0xff;
+    const isWebp = header.slice(0, 4) === "RIFF" && header.slice(8, 12) === "WEBP";
+    if (!isPng && !isJpeg && !isWebp) {
+      throw new Error("OpenVINO generation returned an invalid image payload instead of a real PNG/JPEG/WebP.");
+    }
+    const durationSec = Number(data.duration_sec) || parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+    return {
+      image: `data:image/png;base64,${normalizedB64}`,
+      seed: data.data?.[0]?.seed ?? payload.seed,
+      duration_sec: durationSec,
+    };
+  }
+
+  const baseUrl = await getBackendBaseUrl();
 
 
   // txt2img uses /v1/images/generations; img2img uses /sdapi/v1/img2img.
@@ -417,9 +480,17 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
       // Response: { data: [{ b64_json: "..." }] }
       const imgB64 = data?.data?.[0]?.b64_json ?? data?.images?.[0];
       if (imgB64) {
+        const normalizedB64 = String(imgB64).replace(/^data:[^;]+;base64,/, "");
+        const header = atob(normalizedB64.slice(0, 24));
+        const isPng = header.charCodeAt(0) === 0x89 && header.slice(1, 4) === "PNG";
+        const isJpeg = header.charCodeAt(0) === 0xff && header.charCodeAt(1) === 0xd8 && header.charCodeAt(2) === 0xff;
+        const isWebp = header.slice(0, 4) === "RIFF" && header.slice(8, 12) === "WEBP";
+        if (!isPng && !isJpeg && !isWebp) {
+          throw new Error("Generation returned an invalid image payload instead of a real PNG/JPEG/WebP.");
+        }
         const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
         return {
-          image:        `data:image/png;base64,${imgB64}`,
+          image:        `data:image/png;base64,${normalizedB64}`,
           seed:         data.data?.[0]?.seed ?? payload.seed,
           duration_sec: durationSec,
         };
@@ -651,6 +722,20 @@ export async function downloadModel(url) {
     return await res.json();
   } catch (e) {
     console.error("Failed to start model download:", e);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function downloadOpenVinoModel(modelId) {
+  try {
+    const res = await fetch("/api/download-openvino-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId })
+    });
+    return await readJsonResponse(res, "The local server returned an invalid OpenVINO download response.");
+  } catch (e) {
+    console.error("Failed to start OpenVINO model download:", e);
     return { ok: false, error: e.message };
   }
 }

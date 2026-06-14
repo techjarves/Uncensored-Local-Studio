@@ -3,11 +3,17 @@ app/models/*.safetensors
 app/models/*.gguf
 app/models/*.ckpt
 app/models
+app/openvino-models/
 app/outputs/
+
+# Ignore generated frontend build output
+app/dist/
 
 # Ignore portable Node.js binaries and packages
 app/tools/
 **/node_modules/
+**/node_modules_mac/
+**/node_modules_linux/
 node_modules/
 
 # Ignore backend folder completely (contains massive DLLs, EXEs, and ZIPs >1GB)
@@ -20,8 +26,3 @@ app/backend/
 Thumbs.db
 *.log
 *.tmp
-
-
-
-# output images folder
-/app/outputs    

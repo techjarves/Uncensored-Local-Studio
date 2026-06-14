@@ -22,27 +22,28 @@
 ---
 
 ## 📖 Overview
-**Local AI Image Generator** is a zero-configuration, portable desktop environment for running Stable Diffusion (Safetensors/GGUF/CKPT) offline on Windows, Linux, and macOS. Double-clicking `start.bat` (Windows) or running `./start.sh` (Linux/macOS) automatically handles dependency setup, GPU backend matching, and launches a high-performance local web workspace.
+**Local AI Image Generator** is a zero-configuration, portable desktop environment for running Stable Diffusion (Safetensors/GGUF/CKPT) offline on Windows, Linux, and macOS. Running `windows.bat` (Windows), `./linux.sh` (Linux), or `./mac.sh` (macOS) automatically handles dependency setup, GPU backend matching, and launches a high-performance local web workspace.
 
 ---
 
 ## ⚡ Quick Start
 
 ### Windows
-1. **Launch:** Double-click **`start.bat`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
+1. **Launch:** Double-click **`windows.bat`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
 2. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
 3. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
 
 ### Linux
 1. **Check compatibility:** Prebuilt Linux backends are built on Ubuntu 24.04 and require **glibc 2.38+**. Run `ldd --version` to verify.
-2. **Launch:** Open a terminal in the project folder and run **`./start.sh`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
-   - For maximum AMD GPU performance, use **`./start.sh --max-perf`** on first setup (adds the ROCm backend).
+2. **Launch:** Open a terminal in the project folder and run **`./linux.sh`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
+   - For maximum AMD GPU performance, use **`./linux.sh --max-perf`** on first setup (adds the ROCm backend).
+   - For Intel Core Ultra NPU support, install the Intel Linux NPU driver, then run **`./linux.sh --setup-openvino`**.
 3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
 4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
 
 ### macOS
 1. **Check compatibility:** The prebuilt macOS backend is for **Apple Silicon (M1 or newer)** and uses **Metal** GPU acceleration.
-2. **Launch:** Open Terminal in the project folder and run **`./start.sh`** (downloads portable Node.js and the pre-compiled Metal backend on first run).
+2. **Launch:** Open Terminal in the project folder and run **`./mac.sh`** (downloads portable Node.js and the pre-compiled Metal backend on first run).
 3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
 4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
 
@@ -61,8 +62,9 @@
 ## 📁 Repository Structure
 ```
 local-ai-image-generator/
-├── start.bat                  # Main double-click entrypoint (Windows)
-├── start.sh                   # Main terminal entrypoint (Linux/macOS)
+├── windows.bat                # Main double-click entrypoint (Windows)
+├── linux.sh                   # Main terminal entrypoint (Linux)
+├── mac.sh                     # Main terminal entrypoint (macOS)
 ├── PLAN.md                    # Linux port implementation plan
 ├── LICENSE                    # MIT Open Source license
 ├── .gitignore
@@ -99,6 +101,7 @@ local-ai-image-generator/
 | **NVIDIA** | Vulkan | CPU | No reliable prebuilt Linux CUDA binary is currently available. NVIDIA GPUs use Vulkan. |
 | **AMD Radeon** | ROCm | Vulkan | ROCm provides best AMD performance when host ROCm drivers are available. |
 | **Intel Arc / integrated** | Vulkan | CPU | Cross-vendor Vulkan support. |
+| **Intel Core Ultra NPU** | OpenVINO NPU | CPU | Requires the Intel Linux NPU driver, kernel 6.6+, Python 3, and `./linux.sh --setup-openvino`. |
 | **Integrated / None** | CPU | — | Runs on logical CPU threads (slow). |
 
 ### macOS
@@ -109,13 +112,16 @@ local-ai-image-generator/
 | **Intel Mac** | Source build required | CPU | Official prebuilt macOS backend is Apple Silicon only. |
 
 **System requirements:**
+- **64-bit Windows 10 or Windows 11** is required for the portable Node.js 22 runtime used by the Windows launcher.
 - **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.).
 - The setup script will warn you if your glibc is older. You can still run setup, but the prebuilt backends will not start.
+- **Linux OpenVINO NPU:** Intel Core Ultra, x86_64 Linux, kernel 6.6+, a working `/dev/accel/accel0` device, Python 3 with `venv`, and the Intel Linux NPU driver are required.
 - **Apple Silicon (M1 or newer)** is required for the prebuilt macOS Metal backend.
 
 **Linux setup modes:**
-- **Default (`./start.sh`)**: Downloads CPU + Vulkan backends (~120–150 MB).
-- **Maximum Performance (`./start.sh --max-perf`)**: Also downloads the ROCm backend. Total download ~1.3 GB.
+- **Default (`./linux.sh`)**: Downloads CPU + Vulkan backends (~120–150 MB).
+- **Maximum Performance (`./linux.sh --max-perf`)**: Also downloads the ROCm backend. Total download ~1.3 GB.
+- **Intel NPU (`./linux.sh --setup-openvino`)**: Creates a local OpenVINO Python environment and verifies that the Intel NPU driver exposes an `NPU` device.
 
 ---
 
@@ -137,7 +143,7 @@ Typical generation times for an image with **20 steps** (e.g. 512x512 resolution
 *   **Linux backends fail to start with `GLIBC_2.38' not found`:** The prebuilt binaries require glibc 2.38+ (Ubuntu 24.04). Upgrade your distribution or build stable-diffusion.cpp from source (see below).
 *   **Linux ROCm not loading:** Make sure your AMD GPU and kernel are compatible with ROCm 7.13. The app will automatically fall back to Vulkan if ROCm cannot initialize.
 *   **Windows exits with code `3221225781`:** This is `0xC0000135`, which means Windows could not load a required backend DLL. For AMD/Intel Vulkan, update the GPU driver with Vulkan support, then rerun setup so `app/backend/win/vulkan/` is repaired. For NVIDIA CUDA, update the NVIDIA driver and rerun setup so CUDA runtime DLLs are restored.
-*   **Generation shows "server is not responding or crashed":** The backend process exited. Check the terminal where you ran `./start.sh` for the exact error (common causes are glibc mismatch, missing Vulkan drivers, or out-of-memory).
+*   **Generation shows \"server is not responding or crashed\":** The backend process exited. Check the terminal where you ran `./linux.sh` or `./mac.sh` for the exact error (common causes are glibc mismatch, missing Vulkan drivers, or out-of-memory).
 
 ---
 
@@ -190,7 +196,7 @@ After copying, rename the server binary to match what `scripts/serve.cjs` expect
 - Vulkan: `sd` → `sd-vulkan`
 - ROCm: `sd` → `sd-rocm`
 
-Then restart the app with `./start.sh`.
+Then restart the app with `./linux.sh` (Linux) or `./mac.sh` (macOS).
 
 ---
 

@@ -47,6 +47,18 @@ function Format-Speed {
     return "{0:N0} KB/s" -f ($bps / 1KB)
 }
 
+function Enable-Tls12 {
+    try {
+        # Use the protocol's numeric value because older .NET enum definitions
+        # do not expose the Tls12 member even when Windows supports TLS 1.2.
+        $tls12 = [Enum]::ToObject([Net.SecurityProtocolType], 3072)
+        [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor $tls12
+    } catch {
+        throw "TLS 1.2 could not be enabled. This setup requires 64-bit Windows 10 or Windows 11 with current system updates. $($_.Exception.Message)"
+    }
+}
+
 function Invoke-RichDownload {
     param([string]$Url, [string]$Dest, [string]$Label)
     Print-Info "Downloading: $Label"
@@ -57,7 +69,7 @@ function Invoke-RichDownload {
     $lastTime  = [DateTime]::Now
 
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Enable-Tls12
         $req    = [System.Net.HttpWebRequest]::Create($Url)
         $req.UserAgent = "Mozilla/5.0"
         $resp   = $req.GetResponse()
@@ -388,6 +400,16 @@ if (-not (Test-Path $npmCmd)) {
     Read-Host; exit 1
 }
 
+# If node_modules is a Unix symlink/junction, remove it so Windows can install natively into a real directory
+$nodeModulesDir = Join-Path $frontendDir "node_modules"
+if (Test-Path $nodeModulesDir) {
+    $item = Get-Item $nodeModulesDir
+    if ($item.Attributes -match "ReparsePoint") {
+        Print-Info "Removing Unix symlink for node_modules on Windows..."
+        Remove-Item $nodeModulesDir -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Push-Location $frontendDir
 $oldPath = $env:PATH
 try {
@@ -419,7 +441,7 @@ try {
 # ── Done ─────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ============================================================" -ForegroundColor Green
-Write-Host "   Setup complete! Just double-click start.bat to launch." -ForegroundColor Green
+Write-Host "   Setup complete! Just double-click windows.bat to launch." -ForegroundColor Green
 Write-Host "  ============================================================" -ForegroundColor Green
 Write-Host ""
 Read-Host "  Press Enter to close..."

@@ -1,5 +1,6 @@
-import React, { memo } from "react";
+import React, { memo, useEffect } from "react";
 import { Crop, Sliders, Cpu, Info } from "lucide-react";
+import { stopServer } from "../services/api";
 
 const ASPECT_RATIOS = [
   { id: "1:1", label: "1:1 Square", width: 512, height: 512, sdxl_width: 1024, sdxl_height: 1024, desc: "Social posts & avatars" },
@@ -17,26 +18,55 @@ const isSD15OrCustomModel = (modelName) => {
   return true;
 };
 
-function ImageConstraints({ constraints, setConstraints, activeModel, specs, backendOptions }) {
+function ImageConstraints({
+  constraints,
+  setConstraints,
+  activeModel,
+  specs,
+  backendOptions,
+  serverRunning,
+  setServerRunning,
+  setActiveModel,
+  showAlert = async ({ message }) => window.alert(message),
+  showConfirm = async ({ message }) => window.confirm(message),
+}) {
   const isSD15OrCustom = activeModel ? isSD15OrCustomModel(activeModel) : false;
+  const isOpenVinoNpu = constraints.backendType === "openvino-npu";
+  const forceStandardMode = isSD15OrCustom && !isOpenVinoNpu;
   const availableBackends = backendOptions?.options?.length
     ? backendOptions.options
     : [{ id: "cpu", label: "CPU", available: true }];
 
+  useEffect(() => {
+    if (isOpenVinoNpu && constraints.steps > 8) {
+      setConstraints((prev) => ({ ...prev, steps: 8, npuSteps: 8 }));
+    }
+  }, [constraints.steps, isOpenVinoNpu, setConstraints]);
+
   const updateConstraint = (key, value) => {
     setConstraints((prev) => ({
       ...prev,
-      [key]: value
+      [key]: value,
+      ...(key === "steps"
+        ? isOpenVinoNpu
+          ? { npuSteps: value }
+          : { standardSteps: value }
+        : {}),
     }));
   };
 
   const handleAspectRatioChange = (ratio, sizeType) => {
+    if (isOpenVinoNpu && ratio !== "1:1") return;
     const isSDXL = sizeType === "sdxl" && !isSD15OrCustom;
     const selected = ASPECT_RATIOS.find((r) => r.id === ratio);
     if (selected) {
       let w = isSDXL ? selected.sdxl_width : selected.width;
       let h = isSDXL ? selected.sdxl_height : selected.height;
-      if (isSD15OrCustom) {
+      if (isOpenVinoNpu) {
+        const size = constraints.width >= 1024 ? 1024 : 512;
+        w = size;
+        h = size;
+      } else if (isSD15OrCustom) {
         if (w > h) {
           h = Math.round((h * 512) / w);
           w = 512;
@@ -52,11 +82,54 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
     }
   };
 
-  const handleBackendChange = (backendType) => {
+  const handleBackendChange = async (backendType) => {
+    const currentBackend = constraints.backendType || "cpu";
+    if (backendType === currentBackend) return;
+
+    const switchesAccelerator =
+      (currentBackend === "openvino-npu" && backendType !== "openvino-npu") ||
+      (currentBackend !== "openvino-npu" && backendType === "openvino-npu");
+
+    if (serverRunning && switchesAccelerator) {
+      const leavingNpu = currentBackend === "openvino-npu";
+      const confirmed = await showConfirm({
+        title: leavingNpu ? "Unload NPU Model?" : "Unload Model?",
+        message: leavingNpu
+          ? "The OpenVINO NPU model must be unloaded before switching to the standard backend."
+          : "The active model must be unloaded before switching to the OpenVINO NPU backend.",
+        confirmLabel: "Unload",
+        cancelLabel: "Cancel",
+        danger: true,
+      });
+      if (!confirmed) return;
+
+      try {
+        await stopServer();
+        setServerRunning(false);
+        setActiveModel(null);
+      } catch (err) {
+        await showAlert({
+          title: "Unload Failed",
+          message: err.message || String(err),
+          danger: true,
+        });
+        return;
+      }
+    }
+
     setConstraints((prev) => ({
       ...prev,
       backendType,
       useGpu: backendType !== "cpu",
+      steps: backendType === "openvino-npu"
+        ? Math.max(1, Math.min(8, prev.npuSteps || 4))
+        : Math.max(1, Math.min(60, prev.standardSteps || 20)),
+      ...(backendType === "openvino-npu"
+        ? {
+            width: prev.width >= 1024 ? 1024 : 512,
+            height: prev.width >= 1024 ? 1024 : 512,
+          }
+        : {}),
     }));
   };
 
@@ -79,7 +152,25 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
               1. Picture Size & Shape
             </h3>
             
-            {isSD15OrCustom && (
+            {isOpenVinoNpu ? (
+              <div style={{
+                background: "rgba(99, 102, 241, 0.1)",
+                border: "1px solid var(--md-sys-color-primary)",
+                color: "var(--md-sys-color-on-surface)",
+                padding: "12px",
+                borderRadius: "8px",
+                marginBottom: "16px",
+                fontSize: "0.85rem",
+                display: "flex",
+                gap: "8px",
+                alignItems: "flex-start"
+              }}>
+                <Info size={16} style={{ color: "var(--md-sys-color-primary)", flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <strong>OpenVINO NPU Resolution:</strong> The NPU generates at its stable 512x512 resolution. HD mode produces a 1024x1024 output using high-quality Lanczos upscaling without recompiling the model.
+                </div>
+              </div>
+            ) : isSD15OrCustom && (
               <div style={{
                 background: "rgba(251, 191, 36, 0.1)",
                 border: "1px solid rgb(251, 191, 36)",
@@ -104,7 +195,7 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
               <div className="m3-text-field">
                 <label className="m3-text-field-label">AI Generation Engine Optimization</label>
                 <div className="m3-segmented-button">
-                  {isSD15OrCustom ? (
+                  {forceStandardMode ? (
                     <div
                       className="m3-segment-item disabled"
                       style={{
@@ -115,7 +206,7 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                       }}
                       title="High Quality Mode is disabled for SD 1.x models."
                     >
-                      High Quality Mode (1024px)
+                      {isOpenVinoNpu ? "HD Upscale (1024px)" : "High Quality Mode (1024px)"}
                     </div>
                   ) : (
                     <div
@@ -125,11 +216,11 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                         updateConstraint("height", 1024);
                       }}
                     >
-                      High Quality Mode (1024px)
+                      {isOpenVinoNpu ? "HD Upscale (1024px)" : "High Quality Mode (1024px)"}
                     </div>
                   )}
                   <div
-                    className={`m3-segment-item ${constraints.width < 1024 || isSD15OrCustom ? "active" : ""}`}
+                    className={`m3-segment-item ${constraints.width < 1024 ? "active" : ""}`}
                     onClick={() => {
                       updateConstraint("width", 512);
                       updateConstraint("height", 512);
@@ -139,7 +230,9 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                   </div>
                 </div>
                 <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)", marginTop: "4px" }}>
-                  {isSD15OrCustom 
+                  {isOpenVinoNpu
+                    ? "*HD mode generates at 512x512 on the NPU, then upscales to 1024x1024. It improves output size, but does not add native diffusion detail."
+                    : isSD15OrCustom
                     ? "*Standard Speed Mode (512px) is forced for SD 1.5 / custom models to ensure stable local generations." 
                     : "*Use High Quality (1024px) for Flux or SDXL models. Use Standard (512px) for SD 1.5."}
                 </span>
@@ -151,10 +244,12 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                   {ASPECT_RATIOS.map((ratio) => {
                     const isActive = Math.abs((constraints.width / constraints.height) - (ratio.width / ratio.height)) < 0.1;
+                    const isUnsupportedOpenVinoShape = isOpenVinoNpu && ratio.id !== "1:1";
                     return (
                       <button
                         key={ratio.id}
                         className={`m3-btn m3-btn-outlined aspect-ratio-btn ${isActive ? "active" : ""}`}
+                        disabled={isUnsupportedOpenVinoShape}
                         style={{
                           height: "86px",
                           display: "flex",
@@ -165,12 +260,14 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                           borderRadius: "var(--md-shape-corner-medium)",
                           borderColor: "var(--md-sys-color-outline-variant)"
                         }}
-                        onClick={() => handleAspectRatioChange(ratio.id, isSD15OrCustom ? "sd15" : (constraints.width >= 1024 ? "sdxl" : "sd15"))}
+                        onClick={() => handleAspectRatioChange(ratio.id, forceStandardMode ? "sd15" : (constraints.width >= 1024 ? "sdxl" : "sd15"))}
                       >
                         <div className={`aspect-ratio-preview ratio-${ratio.id.replace(":", "-")}`}></div>
                         <span style={{ fontWeight: 600, fontSize: "0.85rem", marginTop: "2px" }}>{ratio.label}</span>
                         <span style={{ fontSize: "0.68rem", opacity: 0.7 }}>
-                          {isSD15OrCustom
+                          {isUnsupportedOpenVinoShape
+                            ? "Not yet supported on NPU"
+                            : forceStandardMode
                             ? `Max: ${ratio.id === "1:1" ? "512x512" : ratio.id === "4:3" ? "512x384" : ratio.id === "16:9" ? "512x288" : "288x512"}`
                             : ratio.desc}
                         </span>
@@ -202,10 +299,12 @@ function ImageConstraints({ constraints, setConstraints, activeModel, specs, bac
                   value={constraints.steps}
                   onChange={(e) => updateConstraint("steps", parseInt(e.target.value))}
                   min="1"
-                  max="60"
+                  max={isOpenVinoNpu ? "8" : "60"}
                 />
                 <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)", lineHeight: "1.3" }}>
-                  The number of times the AI cleans up the image. More steps = sharper details, but takes longer.
+                  {isOpenVinoNpu
+                    ? "LCM OpenVINO uses 1-8 fast inference steps. Progress is reported after each completed NPU step."
+                    : "The number of times the AI cleans up the image. More steps = sharper details, but takes longer."}
                 </span>
               </div>
 

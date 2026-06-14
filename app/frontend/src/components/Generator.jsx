@@ -98,6 +98,8 @@ function Generator({
             settings.sampler !== constraints.sampler ||
             parseInt(settings.threads) !== parseInt(constraints.threads) ||
             Boolean(settings.useGpu) !== (constraints.useGpu !== false) ||
+            parseInt(settings.width || 512) !== parseInt(constraints.width || 512) ||
+            parseInt(settings.height || 512) !== parseInt(constraints.height || 512) ||
             (settings.backendType || (settings.useGpu === false ? "cpu" : "auto")) !== (constraints.backendType || (constraints.useGpu === false ? "cpu" : "auto"))) {
           needsRestart = true;
         }
@@ -115,7 +117,8 @@ function Generator({
         
         let isReady = false;
         let crashError = null;
-        for (let i = 0; i < 240; i++) { // Poll for up to 120 seconds (240 * 500ms)
+        const maxStartupPolls = constraints.backendType === "openvino-npu" ? 1200 : 240;
+        for (let i = 0; i < maxStartupPolls; i++) {
           const status = await getBackendStatus();
           if (status.loading) {
             setRestartLoadProgress({
@@ -136,7 +139,7 @@ function Generator({
             crashError = status.error;
             break;
           }
-          if (!status.running && i > 3) {
+          if (!status.running && !status.loading?.active && i > 3) {
             crashError = "The backend process terminated immediately on startup.";
             break;
           }

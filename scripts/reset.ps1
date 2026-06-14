@@ -45,6 +45,19 @@ if (Test-Path $nodeModulesDir) {
     Remove-Item $nodeModulesDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$nodeModulesMac = Join-Path $appDir "frontend\node_modules_mac"
+if (Test-Path $nodeModulesMac) {
+    Write-Host "   >> Removing frontend node_modules_mac..." -ForegroundColor Cyan
+    Remove-Item $nodeModulesMac -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$nodeModulesLinux = Join-Path $appDir "frontend\node_modules_linux"
+if (Test-Path $nodeModulesLinux) {
+    Write-Host "   >> Removing frontend node_modules_linux..." -ForegroundColor Cyan
+    Remove-Item $nodeModulesLinux -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+
 # Delete package-lock.json in frontend
 $lockFile = Join-Path $appDir "frontend\package-lock.json"
 if (Test-Path $lockFile) {

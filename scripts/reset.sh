@@ -40,9 +40,19 @@ if [[ -d "$APP_DIR/models" ]]; then
 fi
 
 # Delete node_modules in frontend
-if [[ -d "$APP_DIR/frontend/node_modules" ]]; then
+if [[ -L "$APP_DIR/frontend/node_modules" || -d "$APP_DIR/frontend/node_modules" ]]; then
   echo "   >> Removing frontend node_modules..."
   rm -rf "$APP_DIR/frontend/node_modules"
+fi
+
+if [[ -d "$APP_DIR/frontend/node_modules_mac" ]]; then
+  echo "   >> Removing frontend node_modules_mac..."
+  rm -rf "$APP_DIR/frontend/node_modules_mac"
+fi
+
+if [[ -d "$APP_DIR/frontend/node_modules_linux" ]]; then
+  echo "   >> Removing frontend node_modules_linux..."
+  rm -rf "$APP_DIR/frontend/node_modules_linux"
 fi
 
 # Delete package-lock.json in frontend

@@ -361,6 +361,25 @@ if [[ ! -x "$NPM_BIN" ]]; then
   exit 1
 fi
 
+# Ensure correct OS-specific node_modules folder is symlinked to avoid conflicts
+FRONTEND_NODE_MODULES="$FRONTEND_DIR/node_modules"
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  OS_NODE_MODULES="$FRONTEND_DIR/node_modules_mac"
+  OS_LABEL="node_modules_mac"
+else
+  OS_NODE_MODULES="$FRONTEND_DIR/node_modules_linux"
+  OS_LABEL="node_modules_linux"
+fi
+
+if [[ -d "$FRONTEND_NODE_MODULES" && ! -L "$FRONTEND_NODE_MODULES" ]]; then
+  print_info "Migrating existing node_modules to $OS_LABEL..."
+  mv "$FRONTEND_NODE_MODULES" "$OS_NODE_MODULES"
+fi
+
+rm -f "$FRONTEND_NODE_MODULES"
+mkdir -p "$OS_NODE_MODULES"
+ln -sf "$OS_LABEL" "$FRONTEND_NODE_MODULES"
+
 cd "$FRONTEND_DIR"
 export PATH="$NODE_DIR/bin:$PATH"
 
@@ -384,7 +403,11 @@ fi
 # ── Done ────────────────────────────────────────────────────────────────────
 echo ""
 echo "  ============================================================"
-echo "   Setup complete! Run ./start.sh to launch."
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  echo "   Setup complete! Run ./mac.sh to launch."
+else
+  echo "   Setup complete! Run ./linux.sh to launch."
+fi
 echo "  ============================================================"
 echo ""
 
