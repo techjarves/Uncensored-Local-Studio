@@ -15,6 +15,7 @@ app/tools/
 **/node_modules_mac/
 **/node_modules_linux/
 node_modules/
+**/.active_modules_os
 
 # Ignore backend folder completely (contains massive DLLs, EXEs, and ZIPs >1GB)
 app/backend/

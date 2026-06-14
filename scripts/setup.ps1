@@ -164,10 +164,25 @@ $steps = 4
 # ── Step 1: Portable Node.js ──────────────────────────────────────────────────
 Print-Step 1 $steps "Setting up portable Node.js (app/tools/node-win/)"
 
+$nodeReady = $false
 if ((Test-Path $nodeExe) -and (Test-Path $npmCmd)) {
-    $v = & $nodeExe --version
-    Print-OK "Portable Node.js already ready: $v"
-} else {
+    try {
+        $v = & $nodeExe --version
+        # Test if npm is functional (doesn't throw parsing/unexpected token errors)
+        $npmTest = & $nodeExe (Join-Path $nodeDir "node_modules\npm\bin\npm-cli.js") --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $npmTest -match "^\d+\.\d+\.\d+") {
+            $nodeReady = $true
+            Print-OK "Portable Node.js already ready: $v"
+        }
+    } catch {}
+}
+
+if (-not $nodeReady) {
+    if (Test-Path $nodeDir) {
+        Print-Warn "Portable Node.js installation is corrupted or incomplete. Cleaning up..."
+        Remove-Item $nodeDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     $nodeZip = Join-Path $toolsDir "node.zip"
     New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 
@@ -187,12 +202,27 @@ if ((Test-Path $nodeExe) -and (Test-Path $npmCmd)) {
         Rename-Item $extracted.FullName "node-win"
     }
 
-    if (-not ((Test-Path $nodeExe) -and (Test-Path $npmCmd))) {
-        Print-Fail "Portable Node.js install is incomplete. Close any running Local AI Image Generator windows, delete app/tools/node-win, then run setup again."
+    # Pause briefly to allow USB drive writes to flush
+    Print-Info "Waiting for disk to flush..."
+    Start-Sleep -Seconds 3
+
+    # Re-verify
+    $nodeReady = $false
+    if ((Test-Path $nodeExe) -and (Test-Path $npmCmd)) {
+        try {
+            $v = & $nodeExe --version
+            $npmTest = & $nodeExe (Join-Path $nodeDir "node_modules\npm\bin\npm-cli.js") --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $npmTest -match "^\d+\.\d+\.\d+") {
+                $nodeReady = $true
+            }
+        } catch {}
+    }
+
+    if (-not $nodeReady) {
+        Print-Fail "Portable Node.js install is incomplete or corrupted. Close any running Local AI Image Generator windows, delete app/tools/node-win, then run setup again."
         Read-Host; exit 1
     }
 
-    $v = & $nodeExe --version
     Print-OK "Portable Node.js ready: $v"
 }
 
