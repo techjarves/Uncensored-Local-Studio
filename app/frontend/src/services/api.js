@@ -376,7 +376,7 @@ export async function chatWithLlm(messages, options = {}) {
 }
 
 export async function streamChatWithLlm(messages, options = {}, onToken = () => {}) {
-  const res = await fetch("/api/llm/chat", {
+  const fetchOpts = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -385,7 +385,11 @@ export async function streamChatWithLlm(messages, options = {}, onToken = () => 
       max_tokens: options.maxTokens,
       stream: true,
     }),
-  });
+  };
+  if (options.signal) {
+    fetchOpts.signal = options.signal;
+  }
+  const res = await fetch("/api/llm/chat", fetchOpts);
 
   if (!res.ok) {
     const data = await readJsonResponse(res, `Chat request failed (HTTP ${res.status}).`);
@@ -441,11 +445,11 @@ export async function streamChatWithLlm(messages, options = {}, onToken = () => 
   return { content, usage, timings };
 }
 
-export async function downloadLlmModel(url) {
+export async function downloadLlmModel(url, filename = null) {
   const res = await fetch("/api/llm/download-model", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, filename }),
   });
   return await readJsonResponse(res, "The local server returned an invalid text download response.");
 }

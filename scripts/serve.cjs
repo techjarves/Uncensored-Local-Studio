@@ -1848,7 +1848,7 @@ async function searchHuggingFaceModels(query, filters) {
     models.push({
       id: model.id,
       name: String(model.id || "").split("/").pop().replace(/[-_]+/g, " "),
-      filename: path.basename(filename),
+      filename: `${model.id.replace(/\//g, "--")}--${path.basename(filename)}`,
       repositoryFilename: filename,
       format: "GGUF",
       approxSize: traits.parameters ? `~${traits.parameters}B parameters` : "Size shown before download",
@@ -2202,6 +2202,9 @@ async function startLlm(settings = {}) {
     "--ctx-size", String(llmSettings.contextSize),
     "--threads", String(llmSettings.threads),
     "--n-gpu-layers", String(llmSettings.gpuLayers),
+    "--parallel", "1",
+    "--cache-ram", "0",
+    "--no-warmup",
   ];
   if (mmprojPath) {
     args.push("--mmproj", mmprojPath);
@@ -3604,7 +3607,8 @@ async function doLlmChat(req, res, body, retryCount = 0) {
     if (downloadState.active) return json(res, 409, { ok: false, error: "Another model download is already active." });
     try {
       const directUrl = url.includes("huggingface.co") ? url.replace("/blob/", "/resolve/") : url;
-      const filename = path.basename(new URL(directUrl).pathname);
+      const overrideFilename = body.filename ? path.basename(String(body.filename)) : null;
+      const filename = overrideFilename || path.basename(new URL(directUrl).pathname);
       if (!filename.toLowerCase().endsWith(".gguf")) {
         return json(res, 400, { ok: false, error: "Text model URL must point to a .gguf file." });
       }

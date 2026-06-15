@@ -456,7 +456,7 @@ function ModelManager({
       if (activeModelType === "image") {
         res = await downloadModel(url);
       } else {
-        res = await downloadLlmModel(url);
+        res = await downloadLlmModel(url, expectedFilename);
       }
       if (res && res.ok) {
         startProgressPolling(expectedFilename);
@@ -1241,13 +1241,17 @@ function ModelManager({
                         )}
                       </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
-                        {model.format} • approx. {model.approxSize} {model.resolution !== "N/A" && `• ${model.resolution}`}
+                        {model.format} {model.resolution && model.resolution !== "N/A" && `• ${model.resolution}`}
                       </span>
-                      {model.size && model.size !== "Unknown" && (
+                      {model.size && model.size !== "Unknown" ? (
                         <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-on-surface-variant)", fontWeight: 600 }}>
                           File size: {model.size}
                         </span>
-                      )}
+                      ) : model.approxSize ? (
+                        <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-on-surface-variant)", fontWeight: 600 }}>
+                          File size: approx. {model.approxSize}
+                        </span>
+                      ) : null}
                     </div>
                     <p style={{ fontSize: "0.78rem", color: "var(--md-sys-color-on-surface-variant)", lineHeight: 1.35, margin: 0 }}>
                       {model.notes}

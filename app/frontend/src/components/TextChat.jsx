@@ -47,6 +47,9 @@ function TextChat({
   const bottomRef = useRef(null);
   const completedDownloadRef = useRef("");
   const loadingModelRef = useRef(null);
+  const chatMessagesRef = useRef(null);
+  const prevMessagesLengthRef = useRef(0);
+  const abortControllerRef = useRef(null);
 
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
@@ -181,8 +184,33 @@ function TextChat({
     return () => clearInterval(timer);
   }, [refresh]);
 
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = chatMessagesRef.current;
+    if (!container) return;
+
+    const len = messages.length;
+    const prevLen = prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = len;
+
+    const lastMessage = messages[len - 1];
+    const isNewUserMessage = len > prevLen && lastMessage?.role === "user";
+
+    if (isNewUserMessage) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      const threshold = 150;
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+      if (isNearBottom) {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }
   }, [messages, isBusy, loadingModel]);
 
   const handleModelChange = async (filename) => {
@@ -300,6 +328,9 @@ function TextChat({
       generationStats: { status: "starting", tokens: 0, tokensPerSecond: 0, seconds: 0 },
     }]);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const systemPrompt = textSettings?.systemPrompt || "You are a helpful local AI assistant.";
       const requestMessages = [
@@ -309,14 +340,21 @@ function TextChat({
 
       let assistantText = "";
       let streamedTokens = 0;
+      let firstTokenAt = null;
 
       const response = await streamChatWithLlm(requestMessages, {
         temperature: textSettings?.temperature || 0.7,
         maxTokens: 768,
+        signal: controller.signal,
       }, (_token, fullText) => {
         const now = performance.now();
+        if (streamedTokens === 0) {
+          firstTokenAt = now;
+        }
         streamedTokens += 1;
-        const generationSeconds = Math.max(0.05, (now - requestStartedAt) / 1000);
+        const generationSeconds = firstTokenAt
+          ? Math.max(0.05, (now - firstTokenAt) / 1000)
+          : Math.max(0.05, (now - requestStartedAt) / 1000);
         assistantText = fullText;
         setMessages((prev) => {
           const updated = [...prev];
@@ -362,11 +400,30 @@ function TextChat({
       // Clean up attached files on success
       setAttachments([]);
     } catch (err) {
-      const finalMessages = [...nextMessages, { role: "assistant", content: `Error: ${err.message}`, error: true }];
-      setMessages(finalMessages);
-      saveConversationState(convId, finalMessages, selectedModel);
+      if (err.name === "AbortError") {
+        setMessages((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0 && updated[updated.length - 1].role === "assistant") {
+            const lastMsg = updated[updated.length - 1];
+            updated[updated.length - 1] = {
+              ...lastMsg,
+              generationStats: lastMsg.generationStats ? {
+                ...lastMsg.generationStats,
+                status: "complete",
+              } : null
+            };
+            saveConversationState(convId, updated, selectedModel);
+          }
+          return updated;
+        });
+      } else {
+        const finalMessages = [...nextMessages, { role: "assistant", content: `Error: ${err.message}`, error: true }];
+        setMessages(finalMessages);
+        saveConversationState(convId, finalMessages, selectedModel);
+      }
     } finally {
       setIsBusy(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -520,7 +577,7 @@ function TextChat({
           </div>
         </div>
 
-        <div className="chat-messages">
+        <div ref={chatMessagesRef} className="chat-messages">
           {loadingModel ? (
             <div className="chat-empty" style={{ maxWidth: "480px", margin: "auto", textAlign: "center", padding: "60px 20px" }}>
               <LoaderCircle className="progress-spinner" size={48} style={{ color: "var(--md-sys-color-primary)", marginBottom: "16px" }} />
@@ -575,7 +632,7 @@ function TextChat({
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         {message.content.map((item, idx) => {
                           if (item.type === "text") {
-                            return <span key={idx} style={{ whiteSpace: "pre-wrap" }}>{item.text}</span>;
+                            return <MarkdownRenderer key={idx} content={item.text} />;
                           }
                           if (item.type === "image_url") {
                             return (
@@ -591,7 +648,7 @@ function TextChat({
                         })}
                       </div>
                     ) : (
-                      <span style={{ whiteSpace: "pre-wrap" }}>{message.content}</span>
+                      <MarkdownRenderer content={message.content} />
                     )}
                   </div>
                   {message.role === "assistant" && message.generationStats && !message.error && (
@@ -700,17 +757,182 @@ function TextChat({
               disabled={!status.ready || isBusy}
               style={{ flex: 1 }}
             />
-            <button 
-              className="m3-btn m3-btn-filled" 
-              onClick={sendMessage} 
-              disabled={(!input.trim() && attachments.length === 0) || !status.ready || isBusy}
-              style={{ height: "48px" }}
-            >
-              <Send size={17} /> Send
-            </button>
+            {isBusy && status.ready ? (
+              <button 
+                className="m3-btn m3-btn-error" 
+                onClick={handleStopGeneration} 
+                style={{ height: "48px", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <Square size={14} fill="currentColor" /> Stop
+              </button>
+            ) : (
+              <button 
+                className="m3-btn m3-btn-filled" 
+                onClick={sendMessage} 
+                disabled={(!input.trim() && attachments.length === 0) || !status.ready}
+                style={{ height: "48px" }}
+              >
+                <Send size={17} /> Send
+              </button>
+            )}
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function parseInlineMarkdown(text) {
+  const regex = /(\*\*.*?\*\*|`.*?`|\*.*?\*|\[.*?\]\(.*?\))/g;
+  const parts = text.split(regex);
+
+  return parts.map((part, idx) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={idx} style={{ fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={idx} style={{ 
+        fontFamily: "monospace", 
+        background: "var(--md-sys-color-surface-variant)", 
+        padding: "2px 4px", 
+        borderRadius: "4px",
+        fontSize: "0.85rem"
+      }}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={idx} style={{ fontStyle: "italic" }}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("[") && part.includes("](") && part.endsWith(")")) {
+      const match = part.match(/\[(.*?)\]\((.*?)\)/);
+      if (match) {
+        return (
+          <a key={idx} href={match[2]} target="_blank" rel="noopener noreferrer" style={{ color: "var(--md-sys-color-primary)", textDecoration: "underline" }}>
+            {match[1]}
+          </a>
+        );
+      }
+    }
+    return part;
+  });
+}
+
+export function MarkdownRenderer({ content }) {
+  if (typeof content !== 'string') return null;
+
+  const parts = content.split(/(```[\s\S]*?```)/g);
+
+  return (
+    <div className="markdown-body" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      {parts.map((part, index) => {
+        if (part.startsWith("```") && part.endsWith("```")) {
+          const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+          const lang = match ? match[1] : "";
+          const code = match ? match[2] : part.slice(3, -3);
+          return (
+            <pre key={index} style={{ 
+              background: "var(--md-sys-color-surface-variant)", 
+              color: "var(--md-sys-color-on-surface-variant)",
+              padding: "12px", 
+              borderRadius: "6px", 
+              fontFamily: "monospace", 
+              fontSize: "0.85rem",
+              overflowX: "auto",
+              margin: "6px 0",
+              border: "1px solid var(--border-color)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all"
+            }}>
+              {lang && <div style={{ fontSize: "0.72rem", color: "var(--md-sys-color-outline)", marginBottom: "4px", textTransform: "uppercase", fontWeight: 600 }}>{lang}</div>}
+              <code>{code.trim()}</code>
+            </pre>
+          );
+        } else {
+          const rawLines = part.split(/\r?\n/);
+          const blocks = [];
+          let currentBlock = null;
+
+          for (let i = 0; i < rawLines.length; i++) {
+            const line = rawLines[i];
+            const trimmed = line.trim();
+
+            if (trimmed.startsWith("### ")) {
+              if (currentBlock) { blocks.push(currentBlock); currentBlock = null; }
+              blocks.push({ type: "h4", content: trimmed.slice(4) });
+            } else if (trimmed.startsWith("## ")) {
+              if (currentBlock) { blocks.push(currentBlock); currentBlock = null; }
+              blocks.push({ type: "h3", content: trimmed.slice(3) });
+            } else if (trimmed.startsWith("# ")) {
+              if (currentBlock) { blocks.push(currentBlock); currentBlock = null; }
+              blocks.push({ type: "h2", content: trimmed.slice(2) });
+            } else if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+              const itemContent = trimmed.slice(2);
+              if (currentBlock && currentBlock.type === "ul") {
+                currentBlock.items.push(itemContent);
+              } else {
+                if (currentBlock) { blocks.push(currentBlock); }
+                currentBlock = { type: "ul", items: [itemContent] };
+              }
+            } else {
+              const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+              if (numMatch) {
+                const itemContent = numMatch[2];
+                if (currentBlock && currentBlock.type === "ol") {
+                  currentBlock.items.push(itemContent);
+                } else {
+                  if (currentBlock) { blocks.push(currentBlock); }
+                  currentBlock = { type: "ol", items: [itemContent] };
+                }
+              } else if (trimmed === "") {
+                if (currentBlock) { blocks.push(currentBlock); currentBlock = null; }
+                blocks.push({ type: "spacer" });
+              } else {
+                if (currentBlock && currentBlock.type === "p") {
+                  currentBlock.lines.push(line);
+                } else {
+                  if (currentBlock) { blocks.push(currentBlock); }
+                  currentBlock = { type: "p", lines: [line] };
+                }
+              }
+            }
+          }
+          if (currentBlock) {
+            blocks.push(currentBlock);
+          }
+
+          return blocks.map((block, blockIdx) => {
+            switch (block.type) {
+              case "h4":
+                return <h4 key={blockIdx} style={{ fontSize: "1.05rem", fontWeight: 700, margin: "10px 0 4px 0", color: "var(--md-sys-color-primary)" }}>{parseInlineMarkdown(block.content)}</h4>;
+              case "h3":
+                return <h3 key={blockIdx} style={{ fontSize: "1.2rem", fontWeight: 700, margin: "14px 0 6px 0", color: "var(--md-sys-color-primary)" }}>{parseInlineMarkdown(block.content)}</h3>;
+              case "h2":
+                return <h2 key={blockIdx} style={{ fontSize: "1.35rem", fontWeight: 700, margin: "18px 0 8px 0", color: "var(--md-sys-color-primary)" }}>{parseInlineMarkdown(block.content)}</h2>;
+              case "ul":
+                return (
+                  <ul key={blockIdx} style={{ margin: "4px 0 4px 20px", padding: 0, listStyleType: "disc", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    {block.items.map((item, itemIdx) => (
+                      <li key={itemIdx} style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>{parseInlineMarkdown(item)}</li>
+                    ))}
+                  </ul>
+                );
+              case "ol":
+                return (
+                  <ol key={blockIdx} style={{ margin: "4px 0 4px 20px", padding: 0, listStyleType: "decimal", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    {block.items.map((item, itemIdx) => (
+                      <li key={itemIdx} style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>{parseInlineMarkdown(item)}</li>
+                    ))}
+                  </ol>
+                );
+              case "spacer":
+                return <div key={blockIdx} style={{ height: "6px" }} />;
+              case "p":
+                return <p key={blockIdx} style={{ margin: "2px 0", fontSize: "0.9rem", lineHeight: 1.5 }}>{parseInlineMarkdown(block.lines.join(" "))}</p>;
+              default:
+                return null;
+            }
+          });
+        }
+      })}
     </div>
   );
 }
