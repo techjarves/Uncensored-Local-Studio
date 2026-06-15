@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, LoaderCircle, Send, Trash2, Square, History, Paperclip, X } from "lucide-react";
 import {
-  chatWithLlm,
   getDownloadProgress,
   getLlmStatus,
   listLlmModels,
+  streamChatWithLlm,
   startLlm,
   stopLlm,
 } from "../services/api";
@@ -279,22 +279,38 @@ function TextChat({
     const firstTitle = isNew ? (displayTitleText.slice(0, 26) + (displayTitleText.length > 26 ? "..." : "")) : null;
     saveConversationState(convId, nextMessages, selectedModel, firstTitle);
 
+    setMessages([...nextMessages, { role: "assistant", content: "" }]);
+
     try {
       const systemPrompt = textSettings?.systemPrompt || "You are a helpful local AI assistant.";
       const requestMessages = [
         ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
         ...nextMessages,
       ];
-      const response = await chatWithLlm(requestMessages, { 
-        temperature: textSettings?.temperature || 0.7, 
-        maxTokens: 768 
+
+      let assistantText = "";
+
+      const response = await streamChatWithLlm(requestMessages, {
+        temperature: textSettings?.temperature || 0.7,
+        maxTokens: 768,
+      }, (_token, fullText) => {
+        assistantText = fullText;
+        setMessages((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0 && updated[updated.length - 1].role === "assistant") {
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              content: fullText,
+            };
+          }
+          return updated;
+        });
       });
-      const finalMessages = [...nextMessages, { role: "assistant", content: response.content }];
+
+      const finalMessages = [...nextMessages, { role: "assistant", content: assistantText }];
       setMessages(finalMessages);
-      if (response.usage) {
-        setTokenUsage(response.usage);
-      }
       saveConversationState(convId, finalMessages, selectedModel);
+      if (response.usage) setTokenUsage(response.usage);
       
       // Clean up attached files on success
       setAttachments([]);

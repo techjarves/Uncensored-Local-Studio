@@ -447,13 +447,6 @@ function App() {
     }
   }, [serverRunning, isStoppingServer, showAlert]);
 
-  const readinessIssues = [
-    ...(health?.stale ? ["Restart Local AI Image Generator so the local server loads the latest API."] : []),
-    ...(health?.issues || []),
-  ];
-  const cleanupBytes = cleanupItems.reduce((sum, item) => sum + Number(item.sizeBytes || 0), 0);
-  const showReadinessPanel = Boolean(health && (readinessIssues.length > 0 || cleanupItems.length > 0));
-
   return (
     <div className="app-container">
       {/* Sidebar with Navigation Rail & Specs */}
@@ -471,54 +464,6 @@ function App() {
           theme={theme}
           setTheme={setTheme}
         />
-
-        {showReadinessPanel && (
-          <div className={`m3-card readiness-card ${health?.stale || readinessIssues.length > 0 ? "readiness-card-warning" : ""}`}>
-            <div className="readiness-header">
-              <div>
-                <h3 className="m3-card-title" style={{ marginBottom: "4px" }}>
-                  {health?.stale ? "Restart Required" : readinessIssues.length > 0 ? "System Readiness" : "Safe Cleanup Available"}
-                </h3>
-                <p className="m3-card-subtitle" style={{ margin: 0 }}>
-                  {health?.stale
-                    ? `Running server build: ${health.build || "unknown"}`
-                    : readinessIssues.length > 0
-                      ? "Local AI Image Generator found setup items that may need attention."
-                      : `${cleanupItems.length} temporary item${cleanupItems.length === 1 ? "" : "s"} can be cleaned (${formatBytes(cleanupBytes)}).`}
-                </p>
-              </div>
-              <div className="readiness-actions">
-                <button className="m3-btn m3-btn-outlined" onClick={refreshReadiness} disabled={isReadinessBusy}>
-                  {isReadinessBusy ? "Checking" : "Refresh"}
-                </button>
-                <button className="m3-btn m3-btn-tonal" onClick={copyDiagnostics}>
-                  {diagnosticsCopied ? "Copied" : "Copy Diagnostics"}
-                </button>
-                {cleanupItems.length > 0 && (
-                  <button className="m3-btn m3-btn-error" onClick={cleanupSafeItems} disabled={isReadinessBusy}>
-                    Clean {formatBytes(cleanupBytes)}
-                  </button>
-                )}
-              </div>
-            </div>
-            {readinessIssues.length > 0 && (
-              <div className="readiness-issues">
-                {readinessIssues.slice(0, 4).map((issue) => (
-                  <span key={issue}>{issue}</span>
-                ))}
-              </div>
-            )}
-            {cleanupItems.length > 0 && (
-              <div className="readiness-cleanup-list">
-                {cleanupItems.slice(0, 3).map((item) => (
-                  <span key={item.id} title={item.path}>
-                    {item.name} · {item.size} · {item.reason}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Dynamic Workspace Container */}
         <div style={{ display: activeTab === "generator" ? "flex" : "none", flex: 1, flexDirection: "column", overflow: "hidden" }}>
@@ -595,6 +540,13 @@ function App() {
             showConfirm={showConfirm}
             textSettings={textSettings}
             setTextSettings={setTextSettings}
+            health={health}
+            cleanupItems={cleanupItems}
+            isReadinessBusy={isReadinessBusy}
+            refreshReadiness={refreshReadiness}
+            copyDiagnostics={copyDiagnostics}
+            cleanupSafeItems={cleanupSafeItems}
+            diagnosticsCopied={diagnosticsCopied}
           />
         </div>
       </div>

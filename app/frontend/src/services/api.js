@@ -321,6 +321,22 @@ export async function listLlmModels() {
   return (data.models || []).map(normalizeModel);
 }
 
+export async function searchHuggingFaceModels(query = "", filters = [], page = 1) {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("query", query.trim());
+  if (filters.length > 0) params.set("filters", filters.join(","));
+  params.set("page", String(page));
+  const res = await fetch(`/api/huggingface/models?${params.toString()}`);
+  const data = await readJsonResponse(res, "Hugging Face model search returned invalid data.");
+  return {
+    models: Array.isArray(data.models) ? data.models : [],
+    source: data.source || "huggingface",
+    warning: data.warning || "",
+    page: Number(data.page || page),
+    hasMore: Boolean(data.hasMore),
+  };
+}
+
 export async function startLlm(model, options = {}) {
   const res = await fetch("/api/llm/start", {
     method: "POST",
@@ -357,6 +373,70 @@ export async function chatWithLlm(messages, options = {}) {
     content,
     usage: data?.usage || null
   };
+}
+
+export async function streamChatWithLlm(messages, options = {}, onToken = () => {}) {
+  const res = await fetch("/api/llm/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok) {
+    const data = await readJsonResponse(res, `Chat request failed (HTTP ${res.status}).`);
+    throw new Error(data.error || `Chat request failed (HTTP ${res.status}).`);
+  }
+  if (!res.body) throw new Error("Streaming is not supported by this browser.");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let content = "";
+  let usage = null;
+
+  const consumeEvent = (eventText) => {
+    const data = eventText
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (!data || data === "[DONE]") return data === "[DONE]";
+
+    const parsed = JSON.parse(data);
+    const token = parsed.choices?.[0]?.delta?.content || "";
+    if (token) {
+      content += token;
+      onToken(token, content);
+    }
+    if (parsed.usage) usage = parsed.usage;
+    return false;
+  };
+
+  let finished = false;
+  while (!finished) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || "";
+    for (const eventText of events) {
+      if (consumeEvent(eventText)) {
+        finished = true;
+        break;
+      }
+    }
+    if (done) break;
+  }
+
+  if (!finished && buffer.trim()) consumeEvent(buffer);
+  if (!content) throw new Error("The text model returned an empty streamed response.");
+  return { content, usage };
 }
 
 export async function downloadLlmModel(url) {

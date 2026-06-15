@@ -1268,6 +1268,115 @@ html[data-theme="dark"] .m3-segment-item:hover:not(.active):not(.disabled) {
   transition: width 0.25s ease;
 }
 
+.model-discovery-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color-muted);
+  border-radius: var(--md-shape-corner-large);
+  background: var(--md-sys-color-surface);
+}
+
+.model-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--md-shape-corner-medium);
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-outline);
+}
+
+.model-search-box:focus-within {
+  border-color: var(--md-sys-color-primary);
+}
+
+.model-search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font: inherit;
+}
+
+.model-search-box button {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.model-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.model-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--md-shape-corner-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.model-filter-chip.selected {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.model-filter-clear {
+  border: 0;
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.model-discovery-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--md-sys-color-outline);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.model-search-warning {
+  padding: 10px 12px;
+  border-radius: var(--md-shape-corner-small);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  font-size: 0.8rem;
+}
+
+.model-search-empty {
+  color: var(--md-sys-color-on-surface-variant);
+  text-align: center;
+}
+
+.model-load-more {
+  align-self: center;
+  min-width: 180px;
+  margin: 4px 0 8px;
+}
+
 /* Importer & Library */
 .import-box {
   border: 2px dashed var(--border-color);

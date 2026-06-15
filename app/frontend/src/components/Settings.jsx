@@ -1,6 +1,6 @@
 import React, { memo, useEffect } from "react";
 import { Crop, Sliders, Cpu, Info, MessageSquare, SlidersHorizontal } from "lucide-react";
-import { stopServer } from "../services/api";
+import { stopServer, formatBytes } from "../services/api";
 
 const ASPECT_RATIOS = [
   { id: "1:1", label: "1:1 Square", width: 512, height: 512, sdxl_width: 1024, sdxl_height: 1024, desc: "Social posts & avatars" },
@@ -31,6 +31,13 @@ function Settings({
   setTextSettings,
   showAlert = async ({ message }) => window.alert(message),
   showConfirm = async ({ message }) => window.confirm(message),
+  health,
+  cleanupItems,
+  isReadinessBusy,
+  refreshReadiness,
+  copyDiagnostics,
+  cleanupSafeItems,
+  diagnosticsCopied,
 }) {
   const isSD15OrCustom = activeModel ? isSD15OrCustomModel(activeModel) : false;
   const isOpenVinoNpu = constraints.backendType === "openvino-npu";
@@ -40,6 +47,13 @@ function Settings({
     : [{ id: "cpu", label: "CPU", available: true }];
   const isMac = availableBackends.some(b => b.id === "metal" || b.id === "apple-npu") || 
                 (specs?.os_name && (specs.os_name.toLowerCase().includes("darwin") || specs.os_name.toLowerCase().includes("mac")));
+
+  const readinessIssues = [
+    ...(health?.stale ? ["Restart Local AI Image Generator so the local server loads the latest API."] : []),
+    ...(health?.issues || []),
+  ];
+  const cleanupBytes = (cleanupItems || []).reduce((sum, item) => sum + Number(item.sizeBytes || 0), 0);
+  const showReadinessPanel = Boolean(health && (readinessIssues.length > 0 || (cleanupItems && cleanupItems.length > 0)));
 
   useEffect(() => {
     if (isOpenVinoNpu && constraints.steps > 8) {
@@ -152,6 +166,54 @@ function Settings({
           Configure size, quality, and performance controls for local image and text models.
         </p>
       </div>
+
+      {showReadinessPanel && (
+        <div className={`m3-card readiness-card ${health?.stale || readinessIssues.length > 0 ? "readiness-card-warning" : ""}`} style={{ marginBottom: "20px" }}>
+          <div className="readiness-header">
+            <div>
+              <h3 className="m3-card-title" style={{ marginBottom: "4px" }}>
+                {health?.stale ? "Restart Required" : readinessIssues.length > 0 ? "System Readiness" : "Safe Cleanup Available"}
+              </h3>
+              <p className="m3-card-subtitle" style={{ margin: 0 }}>
+                {health?.stale
+                  ? `Running server build: ${health.build || "unknown"}`
+                  : readinessIssues.length > 0
+                    ? "Local AI Image Generator found setup items that may need attention."
+                    : `${(cleanupItems || []).length} temporary item${(cleanupItems || []).length === 1 ? "" : "s"} can be cleaned (${formatBytes(cleanupBytes)}).`}
+              </p>
+            </div>
+            <div className="readiness-actions">
+              <button className="m3-btn m3-btn-outlined" onClick={refreshReadiness} disabled={isReadinessBusy}>
+                {isReadinessBusy ? "Checking" : "Refresh"}
+              </button>
+              <button className="m3-btn m3-btn-tonal" onClick={copyDiagnostics}>
+                {diagnosticsCopied ? "Copied" : "Copy Diagnostics"}
+              </button>
+              {(cleanupItems || []).length > 0 && (
+                <button className="m3-btn m3-btn-error" onClick={cleanupSafeItems} disabled={isReadinessBusy}>
+                  Clean {formatBytes(cleanupBytes)}
+                </button>
+              )}
+            </div>
+          </div>
+          {readinessIssues.length > 0 && (
+            <div className="readiness-issues">
+              {readinessIssues.slice(0, 4).map((issue) => (
+                <span key={issue}>{issue}</span>
+              ))}
+            </div>
+          )}
+          {(cleanupItems || []).length > 0 && (
+            <div className="readiness-cleanup-list">
+              {cleanupItems.slice(0, 3).map((item) => (
+                <span key={item.id} title={item.path}>
+                  {item.name} · {item.size} · {item.reason}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="generator-layout">
         {/* Left Column: Image Settings */}

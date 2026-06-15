@@ -11,6 +11,9 @@ const os       = require("os");
 const path     = require("path");
 const { spawn, spawnSync, execSync, exec } = require("child_process");
 
+const HF_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+const hfModelCache = new Map();
+
 function readPort(value, fallback) {
   const port = parseInt(value, 10);
   return Number.isInteger(port) && port > 0 && port < 65536 ? port : fallback;
@@ -1551,6 +1554,203 @@ function requestJson(url, payload = null, timeoutMs = 120000) {
   });
 }
 
+function requestHttpsJson(url, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Local-AI-Image-Generator/1.0",
+      },
+      timeout: timeoutMs,
+    }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(body || "null");
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(parsed?.error || `Hugging Face returned HTTP ${res.statusCode}`));
+            return;
+          }
+          resolve(parsed);
+        } catch (err) {
+          reject(new Error(`Hugging Face returned invalid JSON: ${err.message}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("Hugging Face request timed out")));
+  });
+}
+
+function getModelParameterBillions(value) {
+  const text = String(value || "");
+  const matches = [...text.matchAll(/(?:^|[-_/ ])(\d+(?:\.\d+)?)\s*b(?:[-_/ ]|$)/gi)];
+  if (matches.length === 0) return null;
+  return Math.min(...matches.map((match) => Number(match[1])).filter(Number.isFinite));
+}
+
+function selectGgufFile(siblings = [], tier = "low") {
+  const files = siblings
+    .map((item) => typeof item === "string" ? item : item?.rfilename)
+    .filter((name) => name && /\.gguf$/i.test(name))
+    .filter((name) => !/(?:^|\/)(?:mmproj|mtp)(?:[-_/]|$)|-\d{5}-of-\d{5}\.gguf$/i.test(name));
+  const preferences = tier === "high"
+    ? [/q6_k\.gguf$/i, /q5_k_m\.gguf$/i, /q4_k_m\.gguf$/i, /q8_0\.gguf$/i]
+    : [/q4_k_m\.gguf$/i, /q4_k_s\.gguf$/i, /q4_0\.gguf$/i, /q3_k_m\.gguf$/i, /iq4_xs\.gguf$/i];
+  for (const pattern of preferences) {
+    const match = files.find((name) => pattern.test(name));
+    if (match) return match;
+  }
+  return files[0] || "";
+}
+
+function classifyHuggingFaceModel(model, filename) {
+  const searchable = `${model.id || ""} ${filename || ""} ${(model.tags || []).join(" ")}`.toLowerCase();
+  const parameters = getModelParameterBillions(searchable);
+  return {
+    potato: parameters !== null && parameters <= 3,
+    vision: /(?:vision|llava|multimodal|(?:^|[-_/ ])vl(?:[-_/ ]|$)|moondream)/i.test(searchable),
+    uncensored: /uncensored|abliterated|heretic/i.test(searchable),
+    parameters,
+  };
+}
+
+function getTextModelFit(sizeBytes, specs = getHardwareSpecs()) {
+  if (!sizeBytes) {
+    return { recommended: false, mode: "unknown", label: "", reason: "File size is unavailable, so compatibility cannot be estimated." };
+  }
+
+  const ramBytes = Math.max(0, Number(specs.ram_total_gb) || 0) * (1024 ** 3);
+  const vramBytes = Math.max(0, Number(specs.gpu_vram_gb) || 0) * (1024 ** 3);
+  const isAppleSilicon = osPlatform === "darwin" && /apple/i.test(String(specs.cpu_name || ""));
+  const systemReserve = Math.max(4 * (1024 ** 3), ramBytes * 0.3);
+  const usableRam = Math.max(0, ramBytes - systemReserve);
+  const runtimeNeed = (sizeBytes * 1.25) + (1.5 * (1024 ** 3));
+  const fastGpuFit = vramBytes >= runtimeNeed;
+  const cpuOrOffloadFit = usableRam >= runtimeNeed;
+  const unifiedMemoryFit = isAppleSilicon && usableRam >= runtimeNeed;
+  const recommended = fastGpuFit || cpuOrOffloadFit || unifiedMemoryFit;
+
+  if (recommended) {
+    const mode = fastGpuFit ? "GPU memory" : isAppleSilicon ? "unified memory" : "system RAM with CPU/GPU offload";
+    return {
+      recommended: true,
+      mode: fastGpuFit ? "gpu" : isAppleSilicon ? "unified" : "ram",
+      label: fastGpuFit ? "GPU Fit" : isAppleSilicon ? "Fits Unified Memory" : "Fits in RAM",
+      reason: `${formatBytes(sizeBytes)} weights fit the estimated ${mode} budget with runtime headroom.`,
+    };
+  }
+
+  return {
+    recommended: false,
+    mode: "too-large",
+    label: "",
+    reason: `${formatBytes(sizeBytes)} weights need about ${formatBytes(runtimeNeed)} including runtime headroom; this computer has about ${formatBytes(usableRam)} usable RAM and ${formatBytes(vramBytes)} VRAM.`,
+  };
+}
+
+async function addHuggingFaceFileSize(model) {
+  try {
+    const detail = await requestHttpsJson(`https://huggingface.co/api/models/${model.id}?blobs=true`);
+    const file = (detail.siblings || []).find((item) => item?.rfilename === model.repositoryFilename);
+    const sizeBytes = Number(file?.size || file?.lfs?.size || 0);
+    const fit = getTextModelFit(sizeBytes);
+    return {
+      ...model,
+      sizeBytes,
+      size: sizeBytes > 0 ? formatBytes(sizeBytes) : "Unknown",
+      approxSize: sizeBytes > 0 ? formatBytes(sizeBytes) : model.approxSize,
+      recommendedFit: fit.recommended,
+      fitMode: fit.mode,
+      fitLabel: fit.label,
+      fitReason: fit.reason,
+    };
+  } catch (_) {
+    return {
+      ...model,
+      sizeBytes: 0,
+      size: "Unknown",
+      recommendedFit: false,
+      fitMode: "unknown",
+      fitLabel: "",
+      fitReason: "File size is unavailable, so compatibility cannot be estimated.",
+    };
+  }
+}
+
+async function searchHuggingFaceModels(query, filters) {
+  const specs = getHardwareSpecs();
+  const tier = specs.gpu_vram_gb >= 10 || specs.ram_total_gb >= 32
+    ? "high"
+    : specs.gpu_vram_gb >= 5 || specs.ram_total_gb >= 16 ? "mid" : "low";
+  const defaultSearch = tier === "low" ? "1B instruct" : tier === "mid" ? "7B instruct" : "8B instruct";
+  const searchTerms = [
+    query.trim() || defaultSearch,
+    filters.includes("vision") ? "vision" : "",
+    filters.includes("uncensored") ? "uncensored" : "",
+  ].filter(Boolean).join(" ");
+  const cacheKey = `${tier}|${searchTerms}|${filters.sort().join(",")}`;
+  const cached = hfModelCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < HF_MODEL_CACHE_TTL_MS) return cached.models;
+
+  const params = new URLSearchParams({
+    filter: "gguf",
+    search: searchTerms,
+    sort: "downloads",
+    direction: "-1",
+    limit: "50",
+    full: "true",
+  });
+  const results = await requestHttpsJson(`https://huggingface.co/api/models?${params.toString()}`);
+  const models = [];
+
+  for (const model of Array.isArray(results) ? results : []) {
+    if (model.private || model.gated || model.disabled) continue;
+    const filename = selectGgufFile(model.siblings, tier);
+    if (!filename) continue;
+    const traits = classifyHuggingFaceModel(model, filename);
+    if (filters.includes("potato") && !traits.potato) continue;
+    if (filters.includes("vision") && !traits.vision) continue;
+    if (filters.includes("uncensored") && !traits.uncensored) continue;
+
+    const isLikelyChatModel = /instruct|chat|assistant|coder|uncensored|abliterated|vision|llava|\bvl\b/i.test(`${model.id} ${filename}`);
+    if (!query.trim() && !isLikelyChatModel) continue;
+    const normalizedQuery = query.trim().toLowerCase().replace(/[-_/]+/g, " ").replace(/\s+/g, " ");
+    const normalizedModelName = `${model.id} ${filename}`.toLowerCase().replace(/[-_/]+/g, " ").replace(/\s+/g, " ");
+    const queryWords = normalizedQuery.split(" ").filter(Boolean);
+    const exactPhraseMatch = normalizedQuery && normalizedModelName.includes(normalizedQuery);
+    const matchedQueryWords = queryWords.filter((word) => normalizedModelName.includes(word)).length;
+    const score = Number(model.downloads || 0)
+      + (traits.potato && tier === "low" ? 10000000 : 0)
+      + (traits.parameters && tier === "mid" && traits.parameters >= 4 && traits.parameters <= 9 ? 10000000 : 0)
+      + (traits.parameters && tier === "high" && traits.parameters >= 7 && traits.parameters <= 14 ? 10000000 : 0)
+      + (exactPhraseMatch ? 100000000 : 0)
+      + (matchedQueryWords * 5000000);
+    models.push({
+      id: model.id,
+      name: String(model.id || "").split("/").pop().replace(/[-_]+/g, " "),
+      filename: path.basename(filename),
+      repositoryFilename: filename,
+      format: "GGUF",
+      approxSize: traits.parameters ? `~${traits.parameters}B parameters` : "Size shown before download",
+      resolution: "N/A",
+      notes: `Community GGUF from ${String(model.id || "").split("/")[0]}. ${Number(model.downloads || 0).toLocaleString()} Hugging Face downloads.`,
+      url: `https://huggingface.co/${model.id}/resolve/main/${filename.split("/").map(encodeURIComponent).join("/")}`,
+      pageUrl: `https://huggingface.co/${model.id}`,
+      downloads: Number(model.downloads || 0),
+      likes: Number(model.likes || 0),
+      tags: Object.entries(traits).filter(([key, value]) => key !== "parameters" && value).map(([key]) => key),
+      score,
+    });
+  }
+
+  const ranked = models.sort((a, b) => b.score - a.score);
+  hfModelCache.set(cacheKey, { createdAt: Date.now(), models: ranked });
+  return ranked;
+}
+
 async function killOpenVinoWorker() {
   if (!openvinoProc) {
     openvinoReady = false;
@@ -2932,6 +3132,32 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { models: getLlmModels() });
   }
 
+  if (req.url.startsWith("/api/huggingface/models") && req.method === "GET") {
+    const parsed = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const query = String(parsed.searchParams.get("query") || "").slice(0, 120);
+    const filters = String(parsed.searchParams.get("filters") || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => ["potato", "vision", "uncensored"].includes(value));
+    const page = Math.max(1, Math.min(20, Number(parsed.searchParams.get("page")) || 1));
+    const pageSize = 9;
+    try {
+      const rankedModels = await searchHuggingFaceModels(query, [...new Set(filters)]);
+      const start = (page - 1) * pageSize;
+      const pageModels = rankedModels.slice(start, start + pageSize);
+      const models = await Promise.all(pageModels.map(addHuggingFaceFileSize));
+      return json(res, 200, {
+        ok: true,
+        source: "huggingface",
+        models,
+        page,
+        hasMore: start + models.length < rankedModels.length,
+      });
+    } catch (err) {
+      return json(res, 502, { ok: false, error: err.message || "Hugging Face search failed." });
+    }
+  }
+
   if (req.url === "/api/llm/start" && req.method === "POST") {
     const body = await readJsonBody(req, res);
     if (!body) return;
@@ -2955,14 +3181,71 @@ const server = http.createServer(async (req, res) => {
     if (!body) return;
     if (!llmReady) return json(res, 409, { ok: false, error: "Load a text model before sending a message." });
     try {
-      const result = await requestJson(`http://127.0.0.1:${PORT_LLM}/v1/chat/completions`, {
+      const isStream = body.stream === true;
+      const requestData = JSON.stringify({
         model: llmSettings.model || "local-model",
         messages: Array.isArray(body.messages) ? body.messages : [],
         temperature: Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : 0.7,
         max_tokens: Math.max(1, Math.min(4096, Number(body.max_tokens) || 512)),
-        stream: false,
-      }, 300000);
-      return json(res, 200, result);
+        stream: isStream,
+      });
+
+      if (isStream) {
+        const clientReq = http.request({
+          hostname: "127.0.0.1",
+          port: PORT_LLM,
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(requestData),
+          }
+        }, (clientRes) => {
+          if (clientRes.statusCode < 200 || clientRes.statusCode >= 300) {
+            let errorBody = "";
+            clientRes.setEncoding("utf8");
+            clientRes.on("data", (chunk) => { errorBody += chunk; });
+            clientRes.on("end", () => {
+              let message = `Text backend returned HTTP ${clientRes.statusCode}`;
+              try {
+                message = JSON.parse(errorBody || "{}").error?.message || message;
+              } catch (_) {}
+              json(res, clientRes.statusCode || 500, { ok: false, error: message });
+            });
+            return;
+          }
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+          });
+          res.flushHeaders?.();
+          clientRes.on("data", (chunk) => res.write(chunk));
+          clientRes.on("end", () => res.end());
+          clientRes.on("error", (err) => res.destroy(err));
+        });
+
+        clientReq.on("error", (err) => {
+          console.error("LLM stream request error:", err);
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          } else {
+            res.end();
+          }
+        });
+
+        clientReq.write(requestData);
+        clientReq.end();
+        res.on("close", () => {
+          if (!res.writableEnded && !clientReq.destroyed) clientReq.destroy();
+        });
+        return;
+      } else {
+        const result = await requestJson(`http://127.0.0.1:${PORT_LLM}/v1/chat/completions`, JSON.parse(requestData), 300000);
+        return json(res, 200, result);
+      }
     } catch (err) {
       return json(res, 500, { ok: false, error: err.message || String(err) });
     }

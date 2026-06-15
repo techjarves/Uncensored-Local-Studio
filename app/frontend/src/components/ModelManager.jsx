@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect, useCallback } from "react";
-import { FolderOpen, DownloadCloud, RefreshCw, Database, Trash2, Square, HardDrive, Library, AlertTriangle } from "lucide-react";
+import { FolderOpen, DownloadCloud, RefreshCw, Database, Trash2, Square, HardDrive, Library, AlertTriangle, Search, X } from "lucide-react";
 import { 
   listLocalModels, 
   startServer, 
@@ -20,8 +20,15 @@ import {
   downloadLlmModel,
   deleteLlmModel,
   importLlmModel,
-  getLlmStatus
+  getLlmStatus,
+  searchHuggingFaceModels
 } from "../services/api";
+
+const MODEL_FILTERS = [
+  { id: "potato", label: "Potato PC" },
+  { id: "vision", label: "Vision" },
+  { id: "uncensored", label: "Uncensored" },
+];
 
 const MODEL_LIBRARY = [
   {
@@ -233,6 +240,16 @@ function ModelManager({
   const [backendInfo, setBackendInfo] = useState({ backendMode: "", backendBinary: "", backendDevice: "" });
   const [activeLlmModel, setActiveLlmModel] = useState(null);
   const [llmRunning, setLlmRunning] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [selectedFilters, setSelectedFilters] = useState([]);
+  const [huggingFaceModels, setHuggingFaceModels] = useState([]);
+  const [isSearchingModels, setIsSearchingModels] = useState(false);
+  const [modelSearchError, setModelSearchError] = useState("");
+  const [hasHuggingFaceResults, setHasHuggingFaceResults] = useState(false);
+  const [modelSearchPage, setModelSearchPage] = useState(1);
+  const [hasMoreModels, setHasMoreModels] = useState(false);
+  const [isLoadingMoreModels, setIsLoadingMoreModels] = useState(false);
+  const searchRequestRef = React.useRef(0);
 
   const cancelLoadRef = React.useRef(false);
   
@@ -253,6 +270,9 @@ function ModelManager({
     backendOptions?.options?.some((opt) => opt.id === "apple-npu") ||
     backendOptions?.unavailable?.some((opt) => opt.id === "apple-npu")
   );
+  const displayedHuggingFaceModels = huggingFaceModels.filter((model) => (
+    selectedFilters.every((filterId) => model.tags?.includes(filterId))
+  ));
   
   let visibleModelLibrary = [];
   if (activeModelType === "image") {
@@ -264,8 +284,74 @@ function ModelManager({
       visibleModelLibrary = [...visibleModelLibrary, ...COREML_MODEL_LIBRARY];
     }
   } else {
-    visibleModelLibrary = [...TEXT_MODEL_LIBRARY];
+    visibleModelLibrary = [{
+      group: "Recommended Text Models from Hugging Face",
+      items: hasHuggingFaceResults ? displayedHuggingFaceModels : TEXT_MODEL_LIBRARY[0].items,
+    }];
   }
+
+  useEffect(() => {
+    if (activeModelType !== "text") return;
+    const requestId = ++searchRequestRef.current;
+    const timer = setTimeout(async () => {
+      setIsSearchingModels(true);
+      setModelSearchError("");
+      try {
+        const result = await searchHuggingFaceModels(modelSearch, selectedFilters, 1);
+        if (requestId !== searchRequestRef.current) return;
+        const matchingModels = result.models.filter((model) => (
+          selectedFilters.every((filterId) => model.tags?.includes(filterId))
+        ));
+        setHuggingFaceModels(matchingModels);
+        setHasHuggingFaceResults(true);
+        setModelSearchPage(1);
+        setHasMoreModels(result.hasMore);
+      } catch (err) {
+        if (requestId !== searchRequestRef.current) return;
+        setHuggingFaceModels([]);
+        setHasHuggingFaceResults(false);
+        setHasMoreModels(false);
+        setModelSearchError(err.message || "Could not search Hugging Face.");
+      } finally {
+        if (requestId === searchRequestRef.current) setIsSearchingModels(false);
+      }
+    }, modelSearch ? 400 : 0);
+    return () => clearTimeout(timer);
+  }, [activeModelType, modelSearch, selectedFilters]);
+
+  const toggleModelFilter = (filterId) => {
+    setSelectedFilters((current) => (
+      current.includes(filterId)
+        ? current.filter((id) => id !== filterId)
+        : [...current, filterId]
+    ));
+  };
+
+  const handleLoadMoreModels = async () => {
+    if (isLoadingMoreModels || !hasMoreModels) return;
+    const nextPage = modelSearchPage + 1;
+    setIsLoadingMoreModels(true);
+    setModelSearchError("");
+    try {
+      const [result] = await Promise.all([
+        searchHuggingFaceModels(modelSearch, selectedFilters, nextPage),
+        new Promise((resolve) => setTimeout(resolve, 350)),
+      ]);
+      const matchingModels = result.models.filter((model) => (
+        selectedFilters.every((filterId) => model.tags?.includes(filterId))
+      ));
+      setHuggingFaceModels((current) => {
+        const known = new Set(current.map((model) => model.id));
+        return [...current, ...matchingModels.filter((model) => !known.has(model.id))];
+      });
+      setModelSearchPage(result.page);
+      setHasMoreModels(result.hasMore);
+    } catch (err) {
+      setModelSearchError(err.message || "Could not load more Hugging Face models.");
+    } finally {
+      setIsLoadingMoreModels(false);
+    }
+  };
   
   const getLocalModelInfo = (modelId) => localModels.map(normalizeModel).find((model) => model.filename === modelId);
 
@@ -1060,12 +1146,70 @@ function ModelManager({
       <div className="workspace-title-section" style={{ marginTop: "32px", marginBottom: "16px" }}>
         <h3 className="m3-card-title">
           <Library size={20} style={{ color: "var(--md-sys-color-primary)" }} />
-          Model Library
+          {activeModelType === "text" ? "Hugging Face Model Library" : "Model Library"}
         </h3>
       </div>
 
+      {activeModelType === "text" && (
+        <div className="model-discovery-controls">
+          <div className="model-search-box">
+            <Search size={18} />
+            <input
+              type="search"
+              value={modelSearch}
+              onChange={(event) => setModelSearch(event.target.value)}
+              placeholder="Search Hugging Face GGUF models..."
+              aria-label="Search Hugging Face models"
+            />
+            {modelSearch && (
+              <button type="button" onClick={() => setModelSearch("")} title="Clear search" aria-label="Clear model search">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          <div className="model-filter-row" aria-label="Model filters">
+            {MODEL_FILTERS.map((filter) => {
+              const selected = selectedFilters.includes(filter.id);
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={`model-filter-chip ${selected ? "selected" : ""}`}
+                  onClick={() => toggleModelFilter(filter.id)}
+                  aria-pressed={selected}
+                >
+                  {filter.label}
+                  {selected && <X size={14} />}
+                </button>
+              );
+            })}
+            {selectedFilters.length > 0 && (
+              <button type="button" className="model-filter-clear" onClick={() => setSelectedFilters([])}>
+                Clear filters
+              </button>
+            )}
+          </div>
+          {isSearchingModels && (
+            <div className="model-discovery-loading">
+              <RefreshCw className="progress-spinner" size={16} />
+              <span>Loading models from Hugging Face...</span>
+            </div>
+          )}
+          {modelSearchError && (
+            <div className="model-search-warning">
+              {modelSearchError} Showing the built-in fallback catalog.
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {visibleModelLibrary.map((section) => (
+        {activeModelType === "text" && hasHuggingFaceResults && !isSearchingModels && displayedHuggingFaceModels.length === 0 && (
+          <div className="m3-card model-search-empty">
+            No downloadable single-file GGUF models matched this search and filter combination.
+          </div>
+        )}
+        {visibleModelLibrary.filter((section) => section.items.length > 0).map((section) => (
           <div key={section.group} className="m3-card" style={{ margin: 0 }}>
             <h4 style={{ fontWeight: 700, marginBottom: "12px" }}>{section.group}</h4>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" }}>
@@ -1073,14 +1217,17 @@ function ModelManager({
                 const installed = modelNames.includes(model.filename);
                 const downloading = downloadingModelId === model.filename || downloadingModelId === `${model.filename}.zip`;
                 const systemTier = getHardwareTier(specs);
-                const isRecommended = model.recommendedTiers && model.recommendedTiers.includes(systemTier);
+                const isRecommended = typeof model.recommendedFit === "boolean"
+                  ? model.recommendedFit
+                  : model.recommendedTiers && model.recommendedTiers.includes(systemTier);
+                const fitLabel = model.fitLabel || "Recommended Fit";
                 return (
-                  <div key={model.filename} style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "14px", background: "var(--md-sys-color-surface-variant)", border: "1px solid var(--md-sys-color-outline-variant)", borderRadius: "var(--md-shape-corner-medium)" }}>
+                  <div key={`${model.id || section.group}:${model.filename}`} style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "14px", background: "var(--md-sys-color-surface-variant)", border: "1px solid var(--md-sys-color-outline-variant)", borderRadius: "var(--md-shape-corner-medium)" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                       <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                         {model.name}
                         {isRecommended && (
-                          <span style={{ 
+                          <span title={model.fitReason || `Recommended for ${systemTier} tier hardware`} style={{
                             fontSize: "0.68rem", 
                             color: "#2e7d32", 
                             background: "#e8f5e9", 
@@ -1089,13 +1236,18 @@ function ModelManager({
                             fontWeight: "bold",
                             border: "1px solid #c8e6c9" 
                           }}>
-                            [Recommended Fit]
+                            [{fitLabel}]
                           </span>
                         )}
                       </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
                         {model.format} • approx. {model.approxSize} {model.resolution !== "N/A" && `• ${model.resolution}`}
                       </span>
+                      {model.size && model.size !== "Unknown" && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-on-surface-variant)", fontWeight: 600 }}>
+                          File size: {model.size}
+                        </span>
+                      )}
                     </div>
                     <p style={{ fontSize: "0.78rem", color: "var(--md-sys-color-on-surface-variant)", lineHeight: 1.35, margin: 0 }}>
                       {model.notes}
@@ -1129,7 +1281,7 @@ function ModelManager({
                       <span>{installed ? "Downloaded" : downloading ? "Downloading" : "Download"}</span>
                     </button>
                     <a
-                      href={model.url}
+                      href={model.pageUrl || model.url}
                       target="_blank"
                       rel="noreferrer"
                       style={{
@@ -1141,7 +1293,7 @@ function ModelManager({
                         textDecoration: "none",
                       }}
                     >
-                      Save to Downloads folder
+                      {model.pageUrl ? "View on Hugging Face" : "Save to Downloads folder"}
                     </a>
                   </div>
                 );
@@ -1149,6 +1301,17 @@ function ModelManager({
             </div>
           </div>
         ))}
+        {activeModelType === "text" && hasHuggingFaceResults && hasMoreModels && !isSearchingModels && (
+          <button
+            type="button"
+            className="m3-btn m3-btn-tonal model-load-more"
+            onClick={handleLoadMoreModels}
+            disabled={isLoadingMoreModels}
+          >
+            {isLoadingMoreModels && <RefreshCw className="progress-spinner" size={16} />}
+            <span>{isLoadingMoreModels ? "Loading more models..." : "Load More"}</span>
+          </button>
+        )}
       </div>
 
       {/* Local Drag and Drop Importer */}
