@@ -315,205 +315,209 @@ function Settings({
         color="#3b82f6"
       />
       
-      <CollapsibleCard
-        id="image_size"
-        icon={Crop}
-        title="Size & Shape"
-        subtitle={`${constraints.width} × ${constraints.height} px`}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Resolution</span>
-              <span className="settings-value-badge">
-                {constraints.width >= 1024 ? "SDXL" : "SD 1.5"}
-              </span>
+      <div className="settings-two-column">
+        {/* Left Column */}
+        <div className="settings-column">
+          {/* Size & Shape */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Crop size={16} />
+              Size & Shape
             </div>
-            <div className="m3-segmented-button">
-              {["sd15", "sdxl"].map((mode) => (
-                <button
-                  key={mode}
-                  className={`m3-segment-item ${(constraints.width >= 1024 ? "sdxl" : "sd15") === mode ? "active" : ""}`}
-                  onClick={() => {
-                    const ratio = ASPECT_RATIOS.find(r => {
-                      const rw = constraints.width >= 1024 ? r.sdxl_width : r.width;
-                      const rh = constraints.height >= 1024 ? r.sdxl_height : r.height;
-                      return Math.abs(rw - constraints.width) < 10 && Math.abs(rh - constraints.height) < 10;
-                    })?.id || "1:1";
-                    handleAspectRatioChange(ratio, mode);
-                  }}
-                  disabled={isSD15OrCustom && mode === "sdxl"}
-                >
-                  {mode === "sd15" ? "512px" : "1024px"}
-                </button>
-              ))}
+            <div className="m3-field-group">
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Resolution</span>
+                  <span className="settings-value-badge">
+                    {constraints.width >= 1024 ? "SDXL" : "SD 1.5"}
+                  </span>
+                </div>
+                <div className="m3-segmented-button">
+                  {["sd15", "sdxl"].map((mode) => (
+                    <button
+                      key={mode}
+                      className={`m3-segment-item ${(constraints.width >= 1024 ? "sdxl" : "sd15") === mode ? "active" : ""}`}
+                      onClick={() => {
+                        const ratio = ASPECT_RATIOS.find(r => {
+                          const rw = constraints.width >= 1024 ? r.sdxl_width : r.width;
+                          const rh = constraints.height >= 1024 ? r.sdxl_height : r.height;
+                          return Math.abs(rw - constraints.width) < 10 && Math.abs(rh - constraints.height) < 10;
+                        })?.id || "1:1";
+                        handleAspectRatioChange(ratio, mode);
+                      }}
+                      disabled={isSD15OrCustom && mode === "sdxl"}
+                    >
+                      {mode === "sd15" ? "512px" : "1024px"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Aspect Ratio</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
+                  {ASPECT_RATIOS.map((ratio) => {
+                    const isSDXL = constraints.width >= 1024 && !isSD15OrCustom;
+                    const rw = isSDXL ? ratio.sdxl_width : ratio.width;
+                    const rh = isSDXL ? ratio.sdxl_height : ratio.height;
+                    const isActive = Math.abs(constraints.width - rw) < 10 && Math.abs(constraints.height - rh) < 10;
+                    return (
+                      <button
+                        key={ratio.id}
+                        className={`m3-btn ${isActive ? "m3-btn-filled" : "m3-btn-outlined"}`}
+                        onClick={() => handleAspectRatioChange(ratio.id, isSDXL ? "sdxl" : "sd15")}
+                        disabled={isOpenVinoNpu && ratio.id !== "1:1"}
+                        style={{ fontSize: "0.8rem", padding: "10px 4px", height: "auto" }}
+                      >
+                        <div style={{ fontWeight: 700 }}>{ratio.id}</div>
+                        <div style={{ fontSize: "0.7rem", opacity: 0.8, marginTop: "2px" }}>
+                          {rw}×{rh}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div className="m3-text-field">
+                  <label className="m3-text-field-label">Width</label>
+                  <input
+                    type="number"
+                    className="m3-input"
+                    value={constraints.width}
+                    onChange={(e) => updateConstraint("width", Math.round(parseInt(e.target.value) / 64) * 64)}
+                    min="64"
+                    max="2048"
+                    step="64"
+                  />
+                </div>
+                <div className="m3-text-field">
+                  <label className="m3-text-field-label">Height</label>
+                  <input
+                    type="number"
+                    className="m3-input"
+                    value={constraints.height}
+                    onChange={(e) => updateConstraint("height", Math.round(parseInt(e.target.value) / 64) * 64)}
+                    min="64"
+                    max="2048"
+                    step="64"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Aspect Ratio</span>
+          {/* Quality & Speed */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Sliders size={16} />
+              Quality & Speed
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
-              {ASPECT_RATIOS.map((ratio) => {
-                const isSDXL = constraints.width >= 1024 && !isSD15OrCustom;
-                const rw = isSDXL ? ratio.sdxl_width : ratio.width;
-                const rh = isSDXL ? ratio.sdxl_height : ratio.height;
-                const isActive = Math.abs(constraints.width - rw) < 10 && Math.abs(constraints.height - rh) < 10;
-                return (
+            <div className="m3-field-group">
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Detail Steps</span>
+                  <span className="settings-value-badge">{constraints.steps}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={constraints.steps}
+                  onChange={(e) => updateConstraint("steps", parseInt(e.target.value))}
+                  min="1"
+                  max={isOpenVinoNpu ? "8" : "60"}
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
+                  {isOpenVinoNpu
+                    ? "LCM OpenVINO: 1-8 fast steps"
+                    : "More steps = sharper details, longer time"}
+                </span>
+              </div>
+
+              <div className="m3-text-field">
+                <label className="m3-text-field-label">Random Seed</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    type="number"
+                    className="m3-input"
+                    value={constraints.seed}
+                    onChange={(e) => updateConstraint("seed", parseInt(e.target.value) || -1)}
+                    placeholder="-1 for random"
+                    style={{ flex: 1 }}
+                  />
                   <button
-                    key={ratio.id}
-                    className={`m3-btn ${isActive ? "m3-btn-filled" : "m3-btn-outlined"}`}
-                    onClick={() => handleAspectRatioChange(ratio.id, isSDXL ? "sdxl" : "sd15")}
-                    disabled={isOpenVinoNpu && ratio.id !== "1:1"}
-                    style={{ fontSize: "0.8rem", padding: "10px 4px", height: "auto" }}
+                    className="m3-btn m3-btn-tonal"
+                    onClick={() => updateConstraint("seed", -1)}
                   >
-                    <div style={{ fontWeight: 700 }}>{ratio.id}</div>
-                    <div style={{ fontSize: "0.7rem", opacity: 0.8, marginTop: "2px" }}>
-                      {rw}×{rh}
-                    </div>
+                    Random
                   </button>
-                );
-              })}
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div className="m3-text-field">
-              <label className="m3-text-field-label">Width</label>
-              <input
-                type="number"
-                className="m3-input"
-                value={constraints.width}
-                onChange={(e) => updateConstraint("width", Math.round(parseInt(e.target.value) / 64) * 64)}
-                min="64"
-                max="2048"
-                step="64"
+        {/* Right Column */}
+        <div className="settings-column">
+          {/* Memory Optimizations */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <SlidersHorizontal size={16} />
+              Memory Optimizations
+            </div>
+            <div className="m3-field-group">
+              <PremiumToggle
+                checked={constraints.vaeTiling}
+                onChange={(v) => updateConstraint("vaeTiling", v)}
+                label="VAE Tiling"
+                description="Process image in tiles to save VRAM"
+              />
+              <PremiumToggle
+                checked={constraints.vaeOnCpu}
+                onChange={(v) => updateConstraint("vaeOnCpu", v)}
+                label="VAE on CPU"
+                description="Run decoder on CPU if GPU OOM"
+              />
+              <PremiumToggle
+                checked={constraints.useFlashAttn}
+                onChange={(v) => updateConstraint("useFlashAttn", v)}
+                label="Flash Attention"
+                description="Faster attention with less memory"
               />
             </div>
-            <div className="m3-text-field">
-              <label className="m3-text-field-label">Height</label>
-              <input
-                type="number"
-                className="m3-input"
-                value={constraints.height}
-                onChange={(e) => updateConstraint("height", Math.round(parseInt(e.target.value) / 64) * 64)}
-                min="64"
-                max="2048"
-                step="64"
-              />
+          </div>
+
+          {/* Backend & Acceleration */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Monitor size={16} />
+              Backend & Acceleration
+            </div>
+            <div className="m3-field-group">
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Accelerator</span>
+                </div>
+                <div className="m3-segmented-button" style={{ flexWrap: "wrap" }}>
+                  {availableBackends.map((b) => (
+                    <button
+                      key={b.id}
+                      className={`m3-segment-item ${constraints.backendType === b.id ? "active" : ""}`}
+                      onClick={() => handleBackendChange(b.id)}
+                      style={{ flex: "1 1 auto", minWidth: "80px" }}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="image_quality"
-        icon={Sliders}
-        title="Quality & Speed"
-        subtitle={`${constraints.steps} steps`}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Detail Steps</span>
-              <span className="settings-value-badge">{constraints.steps}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={constraints.steps}
-              onChange={(e) => updateConstraint("steps", parseInt(e.target.value))}
-              min="1"
-              max={isOpenVinoNpu ? "8" : "60"}
-            />
-            <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
-              {isOpenVinoNpu
-                ? "LCM OpenVINO: 1-8 fast steps"
-                : "More steps = sharper details, longer time"}
-            </span>
-          </div>
-
-          <div className="m3-text-field">
-            <label className="m3-text-field-label">Random Seed</label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <input
-                type="number"
-                className="m3-input"
-                value={constraints.seed}
-                onChange={(e) => updateConstraint("seed", parseInt(e.target.value) || -1)}
-                placeholder="-1 for random"
-                style={{ flex: 1 }}
-              />
-              <button
-                className="m3-btn m3-btn-tonal"
-                onClick={() => updateConstraint("seed", -1)}
-              >
-                Random
-              </button>
-            </div>
-          </div>
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="image_memory"
-        icon={SlidersHorizontal}
-        title="Memory Optimizations"
-        subtitle="VRAM saving options"
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <PremiumToggle
-            checked={constraints.vaeTiling}
-            onChange={(v) => updateConstraint("vaeTiling", v)}
-            label="VAE Tiling"
-            description="Process image in tiles to save VRAM"
-          />
-          <PremiumToggle
-            checked={constraints.vaeOnCpu}
-            onChange={(v) => updateConstraint("vaeOnCpu", v)}
-            label="VAE on CPU"
-            description="Run decoder on CPU if GPU OOM"
-          />
-          <PremiumToggle
-            checked={constraints.useFlashAttn}
-            onChange={(v) => updateConstraint("useFlashAttn", v)}
-            label="Flash Attention"
-            description="Faster attention with less memory"
-          />
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="image_backend"
-        icon={Monitor}
-        title="Backend & Acceleration"
-        subtitle={constraints.backendType?.toUpperCase() || "Auto"}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Accelerator</span>
-            </div>
-            <div className="m3-segmented-button" style={{ flexWrap: "wrap" }}>
-              {availableBackends.map((b) => (
-                <button
-                  key={b.id}
-                  className={`m3-segment-item ${constraints.backendType === b.id ? "active" : ""}`}
-                  onClick={() => handleBackendChange(b.id)}
-                  style={{ flex: "1 1 auto", minWidth: "80px" }}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </CollapsibleCard>
+      </div>
     </>
   );
 
@@ -527,312 +531,315 @@ function Settings({
         color="#8b5cf6"
       />
       
-      <CollapsibleCard
-        id="text_model"
-        icon={MessageSquare}
-        title="Model & Context"
-        subtitle={`${textSettings.contextSize || "Auto"} context`}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-text-field">
-            <label className="m3-text-field-label">System Prompt</label>
-            <textarea
-              className="m3-input"
-              value={textSettings.systemPrompt || ""}
-              onChange={(e) => updateTextSetting("systemPrompt", e.target.value)}
-              placeholder="Enter system prompt..."
-              rows={3}
-              style={{ resize: "vertical", minHeight: "60px" }}
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Context Size</span>
-              <span className="settings-value-badge">{textSettings.contextSize || 0}</span>
+      <div className="settings-two-column">
+        {/* Left Column */}
+        <div className="settings-column">
+          {/* Model & Context */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <MessageSquare size={16} />
+              Model & Context
             </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.contextSize || 0}
-              onChange={(e) => updateTextSetting("contextSize", parseInt(e.target.value))}
-              min="0"
-              max="32768"
-              step="512"
-            />
-            <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
-              0 = Auto (model default)
-            </span>
-          </div>
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="text_params"
-        icon={Settings2}
-        title="Generation Parameters"
-        subtitle={`Temp: ${textSettings.temperature}`}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Temperature</span>
-              <span className="settings-value-badge">{textSettings.temperature}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.temperature}
-              onChange={(e) => updateTextSetting("temperature", parseFloat(e.target.value))}
-              min="0"
-              max="2"
-              step="0.1"
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Top P</span>
-              <span className="settings-value-badge">{textSettings.topP}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.topP}
-              onChange={(e) => updateTextSetting("topP", parseFloat(e.target.value))}
-              min="0"
-              max="1"
-              step="0.05"
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Top K</span>
-              <span className="settings-value-badge">{textSettings.topK}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.topK}
-              onChange={(e) => updateTextSetting("topK", parseInt(e.target.value))}
-              min="1"
-              max="100"
-              step="1"
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Min P</span>
-              <span className="settings-value-badge">{textSettings.minP}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.minP}
-              onChange={(e) => updateTextSetting("minP", parseFloat(e.target.value))}
-              min="0"
-              max="1"
-              step="0.01"
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Repeat Penalty</span>
-              <span className="settings-value-badge">{textSettings.repeatPenalty}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.repeatPenalty}
-              onChange={(e) => updateTextSetting("repeatPenalty", parseFloat(e.target.value))}
-              min="1"
-              max="2"
-              step="0.05"
-            />
-          </div>
-
-          <div className="m3-text-field">
-            <label className="m3-text-field-label">Seed (-1 = Random)</label>
-            <input
-              type="number"
-              className="m3-input"
-              value={textSettings.seed}
-              onChange={(e) => updateTextSetting("seed", parseInt(e.target.value) || -1)}
-              placeholder="-1"
-            />
-          </div>
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="text_performance"
-        icon={Gauge}
-        title="Performance Profile"
-        subtitle={textSettings.performanceProfile || "balanced"}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Profile</span>
-            </div>
-            <div className="m3-segmented-button">
-              {["potato", "balanced", "high", "custom"].map((profile) => (
-                <button
-                  key={profile}
-                  className={`m3-segment-item ${(textSettings.performanceProfile || "balanced") === profile ? "active" : ""}`}
-                  onClick={() => updateTextSetting("performanceProfile", profile)}
-                >
-                  {profile.charAt(0).toUpperCase() + profile.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">CPU Threads</span>
-              <span className="settings-value-badge">{textSettings.threads || 4}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.threads || 4}
-              onChange={(e) => updateTextSetting("threads", parseInt(e.target.value))}
-              min="1"
-              max={specs?.cpu_cores_logical || 16}
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">GPU Layers</span>
-              <span className="settings-value-badge">{textSettings.gpuLayers === -1 ? "All" : textSettings.gpuLayers}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.gpuLayers === -1 ? 50 : textSettings.gpuLayers}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                updateTextSetting("gpuLayers", val >= 50 ? -1 : val);
-              }}
-              min="0"
-              max="50"
-            />
-            <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
-              50 = All layers on GPU
-            </span>
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">Batch Size</span>
-              <span className="settings-value-badge">{textSettings.batchSize || 512}</span>
-            </div>
-            <input
-              type="range"
-              className="m3-slider"
-              value={textSettings.batchSize || 512}
-              onChange={(e) => updateTextSetting("batchSize", parseInt(e.target.value))}
-              min="64"
-              max="2048"
-              step="64"
-            />
-          </div>
-
-          <div className="m3-slider-group">
-            <div className="m3-slider-header">
-              <span className="m3-slider-label">KV Cache</span>
-            </div>
-            <div className="m3-segmented-button">
-              {["q4_0", "q8_0", "f16"].map((type) => (
-                <button
-                  key={type}
-                  className={`m3-segment-item ${(textSettings.cacheTypeK || "q8_0") === type ? "active" : ""}`}
-                  onClick={() => {
-                    updateTextSetting("cacheTypeK", type);
-                    updateTextSetting("cacheTypeV", type);
-                  }}
-                >
-                  {type.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="text_thinking"
-        icon={Brain}
-        title="Thinking & Reasoning"
-        subtitle={textSettings.enableThinking !== false ? "Enabled" : "Disabled"}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <PremiumToggle
-            checked={textSettings.enableThinking !== false}
-            onChange={(v) => updateTextSetting("enableThinking", v)}
-            label="DeepThink"
-            description={supportsThinking
-              ? "Show model's reasoning process"
-              : "Model does not support thinking"
-            }
-          />
-          {!supportsThinking && (
-            <div style={{
-              padding: "10px 14px",
-              borderRadius: "10px",
-              background: "rgba(239, 68, 68, 0.08)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              fontSize: "0.8rem",
-              color: "var(--md-sys-color-error)"
-            }}>
-              <Info size={14} style={{ verticalAlign: "middle", marginRight: "6px" }} />
-              Current model does not support thinking. Load a reasoning model to enable.
-            </div>
-          )}
-        </div>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="text_backend"
-        icon={Cpu}
-        title="Text Backend"
-        subtitle={llmStatus.settings?.backendMode || "Stopped"}
-        defaultExpanded={false}
-      >
-        <div className="m3-field-group">
-          <div style={{
-            padding: "12px 16px",
-            borderRadius: "12px",
-            background: "var(--md-sys-color-surface-variant)",
-            fontSize: "0.85rem",
-            color: "var(--md-sys-color-on-surface-variant)"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-              <Monitor size={16} />
-              <strong style={{ color: "var(--md-sys-color-on-surface)" }}>
-                {llmStatus.ready ? "Running" : "Stopped"}
-              </strong>
-            </div>
-            {llmStatus.ready && (
-              <div style={{ fontSize: "0.8rem", lineHeight: "1.5" }}>
-                Model: {llmStatus.settings?.model || "Unknown"}<br />
-                Backend: {llmStatus.settings?.backendMode || "Unknown"}<br />
-                Threads: {llmStatus.settings?.threads || "-"}<br />
-                GPU Layers: {llmStatus.settings?.gpuLayers === -1 ? "All" : llmStatus.settings?.gpuLayers}
+            <div className="m3-field-group">
+              <div className="m3-text-field">
+                <label className="m3-text-field-label">System Prompt</label>
+                <textarea
+                  className="m3-input"
+                  value={textSettings.systemPrompt || ""}
+                  onChange={(e) => updateTextSetting("systemPrompt", e.target.value)}
+                  placeholder="Enter system prompt..."
+                  rows={3}
+                  style={{ resize: "vertical", minHeight: "60px" }}
+                />
               </div>
-            )}
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Context Size</span>
+                  <span className="settings-value-badge">{textSettings.contextSize || 0}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.contextSize || 0}
+                  onChange={(e) => updateTextSetting("contextSize", parseInt(e.target.value))}
+                  min="0"
+                  max="32768"
+                  step="512"
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
+                  0 = Auto (model default)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Generation Parameters */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Settings2 size={16} />
+              Generation Parameters
+            </div>
+            <div className="m3-field-group">
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Temperature</span>
+                  <span className="settings-value-badge">{textSettings.temperature}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.temperature}
+                  onChange={(e) => updateTextSetting("temperature", parseFloat(e.target.value))}
+                  min="0"
+                  max="2"
+                  step="0.1"
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Top P</span>
+                  <span className="settings-value-badge">{textSettings.topP}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.topP}
+                  onChange={(e) => updateTextSetting("topP", parseFloat(e.target.value))}
+                  min="0"
+                  max="1"
+                  step="0.05"
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Top K</span>
+                  <span className="settings-value-badge">{textSettings.topK}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.topK}
+                  onChange={(e) => updateTextSetting("topK", parseInt(e.target.value))}
+                  min="1"
+                  max="100"
+                  step="1"
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Min P</span>
+                  <span className="settings-value-badge">{textSettings.minP}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.minP}
+                  onChange={(e) => updateTextSetting("minP", parseFloat(e.target.value))}
+                  min="0"
+                  max="1"
+                  step="0.01"
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Repeat Penalty</span>
+                  <span className="settings-value-badge">{textSettings.repeatPenalty}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.repeatPenalty}
+                  onChange={(e) => updateTextSetting("repeatPenalty", parseFloat(e.target.value))}
+                  min="1"
+                  max="2"
+                  step="0.05"
+                />
+              </div>
+
+              <div className="m3-text-field">
+                <label className="m3-text-field-label">Seed (-1 = Random)</label>
+                <input
+                  type="number"
+                  className="m3-input"
+                  value={textSettings.seed}
+                  onChange={(e) => updateTextSetting("seed", parseInt(e.target.value) || -1)}
+                  placeholder="-1"
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </CollapsibleCard>
+
+        {/* Right Column */}
+        <div className="settings-column">
+          {/* Performance Profile */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Gauge size={16} />
+              Performance Profile
+            </div>
+            <div className="m3-field-group">
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Profile</span>
+                </div>
+                <div className="m3-segmented-button">
+                  {["potato", "balanced", "high", "custom"].map((profile) => (
+                    <button
+                      key={profile}
+                      className={`m3-segment-item ${(textSettings.performanceProfile || "balanced") === profile ? "active" : ""}`}
+                      onClick={() => updateTextSetting("performanceProfile", profile)}
+                    >
+                      {profile.charAt(0).toUpperCase() + profile.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">CPU Threads</span>
+                  <span className="settings-value-badge">{textSettings.threads || 4}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.threads || 4}
+                  onChange={(e) => updateTextSetting("threads", parseInt(e.target.value))}
+                  min="1"
+                  max={specs?.cpu_cores_logical || 16}
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">GPU Layers</span>
+                  <span className="settings-value-badge">{textSettings.gpuLayers === -1 ? "All" : textSettings.gpuLayers}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.gpuLayers === -1 ? 50 : textSettings.gpuLayers}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    updateTextSetting("gpuLayers", val >= 50 ? -1 : val);
+                  }}
+                  min="0"
+                  max="50"
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--md-sys-color-outline)" }}>
+                  50 = All layers on GPU
+                </span>
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">Batch Size</span>
+                  <span className="settings-value-badge">{textSettings.batchSize || 512}</span>
+                </div>
+                <input
+                  type="range"
+                  className="m3-slider"
+                  value={textSettings.batchSize || 512}
+                  onChange={(e) => updateTextSetting("batchSize", parseInt(e.target.value))}
+                  min="64"
+                  max="2048"
+                  step="64"
+                />
+              </div>
+
+              <div className="m3-slider-group">
+                <div className="m3-slider-header">
+                  <span className="m3-slider-label">KV Cache</span>
+                </div>
+                <div className="m3-segmented-button">
+                  {["q4_0", "q8_0", "f16"].map((type) => (
+                    <button
+                      key={type}
+                      className={`m3-segment-item ${(textSettings.cacheTypeK || "q8_0") === type ? "active" : ""}`}
+                      onClick={() => {
+                        updateTextSetting("cacheTypeK", type);
+                        updateTextSetting("cacheTypeV", type);
+                      }}
+                    >
+                      {type.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Thinking & Reasoning */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Brain size={16} />
+              Thinking & Reasoning
+            </div>
+            <div className="m3-field-group">
+              <PremiumToggle
+                checked={textSettings.enableThinking !== false}
+                onChange={(v) => updateTextSetting("enableThinking", v)}
+                label="DeepThink"
+                description={supportsThinking
+                  ? "Show model's reasoning process"
+                  : "Model does not support thinking"
+                }
+              />
+              {!supportsThinking && (
+                <div style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  fontSize: "0.8rem",
+                  color: "var(--md-sys-color-error)"
+                }}>
+                  <Info size={14} style={{ verticalAlign: "middle", marginRight: "6px" }} />
+                  Current model does not support thinking. Load a reasoning model to enable.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Text Backend */}
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">
+              <Cpu size={16} />
+              Text Backend
+            </div>
+            <div className="m3-field-group">
+              <div style={{
+                padding: "12px 16px",
+                borderRadius: "12px",
+                background: "var(--md-sys-color-surface-variant)",
+                fontSize: "0.85rem",
+                color: "var(--md-sys-color-on-surface-variant)"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <Monitor size={16} />
+                  <strong style={{ color: "var(--md-sys-color-on-surface)" }}>
+                    {llmStatus.ready ? "Running" : "Stopped"}
+                  </strong>
+                </div>
+                {llmStatus.ready && (
+                  <div style={{ fontSize: "0.8rem", lineHeight: "1.5" }}>
+                    Model: {llmStatus.settings?.model || "Unknown"}<br />
+                    Backend: {llmStatus.settings?.backendMode || "Unknown"}<br />
+                    Threads: {llmStatus.settings?.threads || "-"}<br />
+                    GPU Layers: {llmStatus.settings?.gpuLayers === -1 ? "All" : llmStatus.settings?.gpuLayers}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </>
   );
 

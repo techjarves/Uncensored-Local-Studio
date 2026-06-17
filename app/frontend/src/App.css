@@ -2696,6 +2696,60 @@ html[data-theme="dark"] .collapsible-card:hover {
   line-height: 1.5;
 }
 
+/* --- Settings Two Column Layout --- */
+.settings-two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-subsection {
+  background: var(--md-sys-color-surface);
+  border: 1px solid var(--md-sys-color-card-border);
+  border-radius: 16px;
+  padding: 20px;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.settings-subsection:hover {
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme="dark"] .settings-subsection:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.settings-subsection-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* --- Responsive: Stack on mobile --- */
+@media (max-width: 900px) {
+  .settings-two-column {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- Responsive Adjustments --- */
 @media (max-width: 600px) {
   .hardware-tier-badge {
