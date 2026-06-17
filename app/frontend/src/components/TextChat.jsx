@@ -69,10 +69,6 @@ const processMessageContent = (rawText, apiReasoning = "", enableThinking = true
 
   return { content, reasoning };
 };
-  }
-
-  return { content, reasoning };
-};
 
 function ThinkingBlock({ reasoning, isComplete, thinkingDuration }) {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
