@@ -878,40 +878,45 @@ function Settings({
                   background: t.bg,
                   color: t.type === "dark" ? "#f4f4f5" : "#0f172a",
                   border: isActive ? "2px solid var(--md-sys-color-primary)" : "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "16px",
+                  borderRadius: "14px",
+                  padding: "18px",
                   textAlign: "left",
                   cursor: "pointer",
                   position: "relative",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "12px",
-                  boxShadow: isActive ? "0 4px 12px rgba(0,0,0,0.15)" : "none",
+                  gap: "14px",
+                  boxShadow: isActive ? "0 4px 16px color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent)" : "none",
+                  transition: "all 0.25s ease",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                  <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{t.name}</span>
+                  <span style={{ fontWeight: 700, fontSize: "0.88rem", letterSpacing: "-0.01em" }}>{t.name}</span>
                   {isActive && (
                     <div style={{
-                      background: "var(--md-sys-color-primary)",
+                      background: "linear-gradient(135deg, var(--md-sys-color-primary), var(--md-sys-color-secondary))",
                       color: "var(--md-sys-color-on-primary)",
                       borderRadius: "50%",
-                      width: "18px",
-                      height: "18px",
+                      width: "22px",
+                      height: "22px",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center"
+                      justifyContent: "center",
+                      boxShadow: "0 2px 6px color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent)"
                     }}>
-                      <Check size={12} />
+                      <Check size={13} strokeWidth={3} />
                     </div>
                   )}
                 </div>
                 
                 {/* Preview circles for primary and secondary colors */}
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: t.primary, border: "1px solid rgba(255,255,255,0.2)" }} title="Primary" />
-                  <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: t.secondary, border: "1px solid rgba(255,255,255,0.2)" }} title="Secondary" />
-                  <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: t.bg, border: "1px solid rgba(0,0,0,0.15)" }} title="Background" />
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: t.primary, border: "2px solid rgba(255,255,255,0.25)", boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }} title="Primary" />
+                  <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: t.secondary, border: "2px solid rgba(255,255,255,0.25)", boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }} title="Secondary" />
+                  <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: t.bg, border: "1.5px solid rgba(0,0,0,0.12)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.06)" }} title="Background" />
+                  <span style={{ marginLeft: "auto", fontSize: "0.7rem", opacity: 0.6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {t.type}
+                  </span>
                 </div>
               </button>
             );
