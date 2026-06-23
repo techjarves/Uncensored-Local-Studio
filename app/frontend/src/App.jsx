@@ -58,6 +58,7 @@ function App() {
   const [activeModel, setActiveModel] = useState(null);
   const [serverRunning, setServerRunning] = useState(false);
   const [isStoppingServer, setIsStoppingServer] = useState(false);
+  const [isLlmLoaded, setIsLlmLoaded] = useState(false);
   const [backendOptions, setBackendOptions] = useState({
     options: [{ id: "cpu", label: "CPU", available: true }],
     cudaAvailable: false,
@@ -673,6 +674,7 @@ function App() {
           telemetry={telemetry}
           serverRunning={serverRunning}
           activeModel={activeModel}
+          isLlmLoaded={isLlmLoaded}
           onStopServer={handleStopServer}
           isStoppingServer={isStoppingServer}
           theme={theme}
@@ -737,6 +739,7 @@ function App() {
             showHistory={showHistory}
             setShowHistory={setShowHistory}
             saveConversationState={saveConversationState}
+            setIsLlmLoaded={setIsLlmLoaded}
           />
         </div>
 

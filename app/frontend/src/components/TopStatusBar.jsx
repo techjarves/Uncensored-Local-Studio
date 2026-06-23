@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect } from "react";
 import { Cpu, HardDrive, Database, Square, RefreshCw, Sun, Moon, Palette, Check } from "lucide-react";
 import { THEMES } from "../themes";
 
-function TopStatusBar({ telemetry, serverRunning, activeModel, onStopServer, isStoppingServer = false, theme, setTheme }) {
+function TopStatusBar({ telemetry, serverRunning, activeModel, isLlmLoaded = false, onStopServer, isStoppingServer = false, theme, setTheme }) {
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -24,11 +24,14 @@ function TopStatusBar({ telemetry, serverRunning, activeModel, onStopServer, isS
   };
 
   const getStatusText = () => {
+    if (isLlmLoaded) return "Model Loaded (Text)";
+    if (activeModel) return "Model Loaded (Image)";
     if (serverRunning) return "Server Active";
     return "Local Mode";
   };
 
   const getStatusClass = () => {
+    if (activeModel || isLlmLoaded) return "status-indicator";
     if (serverRunning) return "status-indicator busy";
     return "status-indicator offline";
   };

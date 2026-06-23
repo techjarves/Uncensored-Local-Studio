@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bot, LoaderCircle, Send, Trash2, Square, History, Paperclip, X, ChevronDown, Globe2 } from "lucide-react";
+import { Bot, LoaderCircle, Send, Trash2, Square, History, Paperclip, X, ChevronDown, Globe2, Plus } from "lucide-react";
 import {
   getDownloadProgress,
   getLlmStatus,
@@ -10,11 +10,8 @@ import {
 } from "../services/api";
 
 const processMessageContent = (rawText, apiReasoning = "", enableThinking = true) => {
-  let content = rawText;
-  let reasoning = apiReasoning || "";
-
   if (typeof rawText !== "string") {
-    return { content, reasoning };
+    return { content: rawText, reasoning: apiReasoning || "" };
   }
 
   const cleanReasoningControlTags = (value) => String(value || "")
@@ -44,56 +41,38 @@ const processMessageContent = (rawText, apiReasoning = "", enableThinking = true
     }
   }
 
-  if (startIdx !== -1) {
-    let endIdx = -1;
-    let matchedEndTag = "";
-    const searchArea = rawText.substring(startIdx + matchedStartTag.length);
+  if (startIdx === -1) {
+    return { content: cleanReasoningControlTags(rawText), reasoning: "" };
+  }
 
-    for (const tag of endTags) {
-      const idx = searchArea.indexOf(tag);
-      if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
-        endIdx = idx;
-        matchedEndTag = tag;
-      }
-    }
-
-    if (endIdx !== -1) {
-      const actualEndIdxInRaw = startIdx + matchedStartTag.length + endIdx;
-      const extractedReasoning = rawText.substring(startIdx + matchedStartTag.length, actualEndIdxInRaw).trim();
-      
-      reasoning = (reasoning + "\n" + extractedReasoning).trim();
-      
-      const afterEndText = rawText.substring(actualEndIdxInRaw + matchedEndTag.length);
-      content = (rawText.substring(0, startIdx) + afterEndText).trim();
-      
-      return processMessageContent(content, reasoning, enableThinking);
-    } else {
-      const extractedReasoning = rawText.substring(startIdx + matchedStartTag.length).trim();
-      reasoning = (reasoning + "\n" + extractedReasoning).trim();
-      content = rawText.substring(0, startIdx).trim();
+  let endIdx = -1;
+  for (const tag of endTags) {
+    const idx = rawText.indexOf(tag, startIdx + matchedStartTag.length);
+    if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
+      endIdx = idx;
     }
   }
 
-  return { content, reasoning };
+  if (endIdx === -1) {
+    const rawReasoning = rawText.substring(startIdx + matchedStartTag.length);
+    return { content: "", reasoning: cleanReasoningControlTags(rawReasoning) };
+  }
+
+  const rawReasoning = rawText.substring(startIdx + matchedStartTag.length, endIdx);
+  const rawContent = rawText.substring(endIdx);
+
+  return {
+    content: cleanReasoningControlTags(rawContent),
+    reasoning: cleanReasoningControlTags(rawReasoning)
+  };
 };
 
-const messageContainsImage = (message) => (
-  Array.isArray(message?.content) &&
-  message.content.some((item) => item?.type === "image_url" && item?.image_url?.url)
-);
+function ChatThinkingSection({ reasoning, timeElapsed, isComplete }) {
+  const [isExpanded, setIsExpanded] = useState(true);
 
-function ThinkingBlock({ reasoning, isComplete, thinkingDuration }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  useEffect(() => {
-    if (isComplete) {
-      setIsExpanded(false);
-    }
-  }, [isComplete]);
-
-  if (!reasoning) return null;
-
-  const formattedTime = thinkingDuration > 0 ? ` (${thinkingDuration.toFixed(1)}s)` : "";
+  const formattedTime = timeElapsed > 0 
+    ? ` (${timeElapsed.toFixed(timeElapsed < 10 ? 1 : 0)}s)`
+    : "";
 
   return (
     <div className="chat-thinking-container">
@@ -121,6 +100,11 @@ function ThinkingBlock({ reasoning, isComplete, thinkingDuration }) {
   );
 }
 
+const messageContainsImage = (message) => (
+  Array.isArray(message?.content) &&
+  message.content.some((item) => item?.type === "image_url" && item?.image_url?.url)
+);
+
 function TextChat({ 
   specs, 
   showAlert, 
@@ -135,7 +119,8 @@ function TextChat({
   setActiveConversationId,
   showHistory,
   setShowHistory,
-  saveConversationState
+  saveConversationState,
+  setIsLlmLoaded
 }) {
   const formatGenerationTime = (seconds) => {
     const value = Number(seconds) || 0;
@@ -157,6 +142,25 @@ function TextChat({
     completion_tokens: 0,
     total_tokens: 0
   });
+
+  useEffect(() => {
+    if (setIsLlmLoaded) {
+      setIsLlmLoaded(status.ready);
+    }
+  }, [status.ready, setIsLlmLoaded]);
+
+  const [showModelMenu, setShowModelMenu] = useState(false);
+  const modelMenuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(event.target)) {
+        setShowModelMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const estimateTokens = (text) => {
     const value = String(text || "").trim();
@@ -882,26 +886,68 @@ function TextChat({
               <History size={17} />
             </button>
 
-            <select
-              value={selectedModel}
-              onChange={(e) => handleModelChange(e.target.value)}
-              disabled={isBusy}
+            <button
+              onClick={handleNewChat}
+              className="m3-btn m3-btn-tonal"
               style={{
-                fontSize: "0.9rem", fontWeight: "600",
-                border: "1px solid var(--border-color)",
-                borderRadius: "var(--md-shape-corner-medium)",
+                height: "34px", width: "34px", padding: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                borderRadius: "var(--md-shape-corner-medium)", cursor: "pointer",
                 background: "var(--md-sys-color-surface-variant)",
                 color: "var(--md-sys-color-on-surface)",
-                padding: "6px 12px", outline: "none", cursor: "pointer", minWidth: "180px", flex: 1
+                border: "1px solid var(--border-color)", flexShrink: 0
               }}
+              title="Start New Chat"
+              disabled={isBusy}
             >
-              <option value="">No model loaded (Select GGUF)</option>
-              {models.map((m) => (
-                <option key={m.filename} value={m.filename}>
-                  {m.filename} {m.filename === status.settings?.model && status.ready ? "• Active" : ""}
-                </option>
-              ))}
-            </select>
+              <Plus size={17} />
+            </button>
+
+            <div ref={modelMenuRef} style={{ position: "relative", display: "inline-block", flex: "0 1 280px", maxWidth: "280px", width: "100%" }}>
+              <button
+                onClick={() => !isBusy && setShowModelMenu(!showModelMenu)}
+                className={`chat-model-select-trigger ${showModelMenu ? "active" : ""}`}
+                disabled={isBusy}
+                title="Select GGUF Model"
+              >
+                <span className="chat-model-select-label">
+                  {selectedModel ? selectedModel : "No model loaded (Select GGUF)"}
+                </span>
+                <ChevronDown size={14} className={`chat-model-select-arrow ${showModelMenu ? "open" : ""}`} />
+              </button>
+
+              {showModelMenu && (
+                <div className="chat-model-dropdown-menu">
+                  <button
+                    className={`chat-model-dropdown-item ${!selectedModel ? "selected" : ""}`}
+                    onClick={() => {
+                      handleModelChange("");
+                      setShowModelMenu(false);
+                    }}
+                  >
+                    No model loaded (Select GGUF)
+                  </button>
+                  {models.map((m) => {
+                    const isActive = m.filename === status.settings?.model && status.ready;
+                    const isSelected = m.filename === selectedModel;
+                    return (
+                      <button
+                        key={m.filename}
+                        className={`chat-model-dropdown-item ${isSelected ? "selected" : ""} ${isActive ? "active" : ""}`}
+                        onClick={() => {
+                          handleModelChange(m.filename);
+                          setShowModelMenu(false);
+                        }}
+                        title={m.filename}
+                      >
+                        <span className="chat-model-name-text">{m.filename}</span>
+                        {isActive && <span className="chat-model-active-badge">Active</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             {isBusy && !loadingModel && <LoaderCircle className="progress-spinner" size={16} />}
             {selectedModel && (!status.ready || status.settings?.model !== selectedModel) && !loadingModel && (
               <button
@@ -940,8 +986,8 @@ function TextChat({
                         style={{ transition: "stroke-dashoffset 0.35s" }}
                       />
                     </svg>
-                    <div style={{ position: "absolute", textAlign: "center" }}>
-                      <span style={{ fontSize: "0.58rem", fontWeight: "700" }}>{percent}%</span>
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: "0.58rem", fontWeight: "700", lineHeight: 1 }}>{percent}%</span>
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
@@ -1174,44 +1220,9 @@ function TextChat({
             </div>
           )}
 
-          {/* Input row */}
+          {/* Input container with vertical layout */}
           <div className="chat-composer-inner">
-            <input type="file" ref={fileInputRef} style={{ display: "none" }} multiple onChange={handleFileChange} />
-            <button
-              className="chat-composer-attach-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!supportsVision || isBusy}
-              title={supportsVision ? "Attach files or images" : visionStatus}
-            >
-              <Paperclip size={17} />
-            </button>
-            <button
-              className={`chat-composer-deepthink-btn web-search-btn ${useWebSearch ? "active" : ""}`}
-              onClick={() => setUseWebSearch((value) => !value)}
-              disabled={!status.ready || isBusy}
-              title={useWebSearch ? "Disable web search" : "Enable web search"}
-            >
-              <Globe2 size={14} />
-              <span>Web</span>
-            </button>
-
-
-            {status.ready && supportsThinking && (
-              <button
-                className={`chat-composer-deepthink-btn deepthink-btn ${deepThinkEnabled ? "active" : ""}`}
-                onClick={handleThinkingToggle}
-                title={deepThinkEnabled ? "Disable DeepThink reasoning" : "Enable DeepThink reasoning"}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={deepThinkEnabled ? "rotate-anim" : ""}>
-                  <circle cx="12" cy="12" r="3" />
-                  <ellipse cx="12" cy="12" rx="3" ry="9" />
-                  <ellipse cx="12" cy="12" rx="9" ry="3" />
-                </svg>
-                <span>DeepThink</span>
-              </button>
-            )}
-
-            <div className="chat-composer-middle" style={{ flex: 1, display: "flex", minWidth: 0 }}>
+            <div className="chat-composer-textarea-container">
               <textarea
                 ref={textareaRef}
                 className="chat-composer-textarea"
@@ -1229,20 +1240,60 @@ function TextChat({
               />
             </div>
 
-            {isBusy && status.ready ? (
-              <button className="chat-composer-stop-btn" onClick={handleStopGeneration} title="Stop generation">
-                <Square size={15} fill="currentColor" />
-              </button>
-            ) : (
-              <button
-                className="chat-composer-send-btn"
-                onClick={sendMessage}
-                disabled={(!input.trim() && attachments.length === 0) || !status.ready}
-                title="Send message"
-              >
-                <Send size={17} />
-              </button>
-            )}
+            <div className="chat-composer-toolbar">
+              <div className="chat-composer-toolbar-left">
+                <input type="file" ref={fileInputRef} style={{ display: "none" }} multiple onChange={handleFileChange} />
+                <button
+                  className="chat-composer-attach-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!supportsVision || isBusy}
+                  title={supportsVision ? "Attach files or images" : visionStatus}
+                >
+                  <Paperclip size={17} />
+                </button>
+                <button
+                  className={`chat-composer-deepthink-btn web-search-btn ${useWebSearch ? "active" : ""}`}
+                  onClick={() => setUseWebSearch((value) => !value)}
+                  disabled={!status.ready || isBusy}
+                  title={useWebSearch ? "Disable web search" : "Enable web search"}
+                >
+                  <Globe2 size={14} />
+                  <span>Web</span>
+                </button>
+
+                {status.ready && supportsThinking && (
+                  <button
+                    className={`chat-composer-deepthink-btn deepthink-btn ${deepThinkEnabled ? "active" : ""}`}
+                    onClick={handleThinkingToggle}
+                    title={deepThinkEnabled ? "Disable DeepThink reasoning" : "Enable DeepThink reasoning"}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={deepThinkEnabled ? "rotate-anim" : ""}>
+                      <circle cx="12" cy="12" r="3" />
+                      <ellipse cx="12" cy="12" rx="3" ry="9" />
+                      <ellipse cx="12" cy="12" rx="9" ry="3" />
+                    </svg>
+                    <span>DeepThink</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="chat-composer-toolbar-right">
+                {isBusy && status.ready ? (
+                  <button className="chat-composer-stop-btn" onClick={handleStopGeneration} title="Stop generation">
+                    <Square size={15} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    className="chat-composer-send-btn"
+                    onClick={sendMessage}
+                    disabled={(!input.trim() && attachments.length === 0) || !status.ready}
+                    title="Send message"
+                  >
+                    <Send size={17} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <div className="chat-composer-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
         </div>
