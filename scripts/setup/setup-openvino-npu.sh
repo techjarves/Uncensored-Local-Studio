@@ -12,7 +12,7 @@ PYTHON_BIN="$VENV_DIR/bin/python"
 
 echo ""
 echo "  ============================================================"
-echo "   Local AI Image Generator - Linux OpenVINO NPU Setup"
+echo "   Uncensored AI Studio - Linux OpenVINO NPU Setup"
 echo "  ============================================================"
 echo ""
 

@@ -1,100 +1,144 @@
-# 🖼️ Local AI Image Generator
+# 🖼️ Uncensored AI Studio
 
-### An easy, zero-setup local image and text AI studio for Windows, Linux, and macOS.
+<p align="center">
+  <strong>A premium, zero-configuration local AI studio and offline GUI for Stable Diffusion (Image Generation), LLMs (Chat), Whisper (Speech-to-Text), and Kokoro (Text-to-Speech). Powered by hardware-accelerated GPU and NPU execution on Windows, Linux, and macOS.</strong>
+</p>
 
-## Text Chat
+<p align="center">
+  <img src="https://img.shields.io/badge/Offline-100%25-green?style=for-the-badge&logo=offline" alt="100% Offline" />
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge" alt="Platforms" />
+  <img src="https://img.shields.io/badge/License-MIT-orange?style=for-the-badge" alt="License" />
+</p>
 
-The Text Chat workspace runs official `llama.cpp` binaries and keeps language models separate from image models:
+<p align="center">
+  🎥 <strong>Watch the Setup & Demo Video:</strong> <a href="https://youtu.be/ESELhY-G_9w">https://youtu.be/ESELhY-G_9w</a>
+</p>
 
-- Image models: `app/models`
-- Text GGUF models: `app/llm-models`
-- Portable llama.cpp binaries: `app/llm-backend/<platform>`
-
-The normal platform setup installs both image and text backends. Text and image engines are mutually exclusive by default to avoid exhausting shared RAM or VRAM. A small Qwen2.5 Coder starter model is available from the Text Chat download panel.
-
-
-
-| **Generation Workspace** | **Model Library** | **Image Constraints** |
-| :---: | :---: | :---: |
-| <img src="assets/dashboard.png" width="100%" style="border-radius: 6px;"> | <img src="assets/models.png" width="100%" style="border-radius: 6px;"> | <img src="assets/settings.png" width="100%" style="border-radius: 6px;"> |
-
----
-
-</div>
-
-<div align="center">
-  <p>🎥 <b>Watch the Setup & Demo Video:</b> <a href="https://youtu.be/ESELhY-G_9w">https://youtu.be/ESELhY-G_9w</a></p>
+<p align="center">
   <a href="https://youtu.be/ESELhY-G_9w">
-    <img src="https://img.youtube.com/vi/ESELhY-G_9w/maxresdefault.jpg" alt="Local AI Image Generator Video Tutorial" style="width:100%; max-width:800px; border-radius: 8px; margin-top: 10px;">
+    <img src="https://img.youtube.com/vi/ESELhY-G_9w/maxresdefault.jpg" alt="Uncensored AI Studio Video Tutorial" width="800" style="border-radius: 8px;" />
   </a>
-</div>
+</p>
 
 ---
 
-## 📖 Overview
-**Local AI Image Generator** is a zero-configuration, portable desktop environment for running Stable Diffusion (Safetensors/GGUF/CKPT) offline on Windows, Linux, and macOS. Running `windows.bat` (Windows), `./linux.sh` (Linux), or `./mac.sh` (macOS) automatically handles dependency setup, GPU backend matching, and launches a high-performance local web workspace.
+
+## 📖 Table of Contents
+* [What is Uncensored AI Studio?](#what-is-uncensored-ai-studio)
+* [Key Features](#key-features)
+* [Workspace & Engine Architecture](#workspace-architecture)
+* [Folder Architecture](#folder-architecture)
+* [Getting Started](#getting-started)
+  * [Windows Setup](#windows-setup)
+  * [Linux Setup](#linux-setup)
+  * [macOS Setup](#macos-setup)
+* [Hardware Compatibility & Acceleration](#hardware-compatibility-acceleration)
+* [Troubleshooting & FAQ](#troubleshooting-faq)
+* [Building From Source](#building-from-source)
+* [Licensing](#licensing)
 
 ---
 
-## ⚡ Quick Start
+## <a id="what-is-uncensored-ai-studio"></a>📖 What is Uncensored AI Studio?
 
-### Windows
-1. **Launch:** Double-click **`windows.bat`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
+**Uncensored AI Studio** is a completely offline, zero-setup, self-contained AI studio for Windows, Linux, and macOS. Unlike cloud-based AI systems, it runs entirely on your own hardware with no censorship, tracking, subscriptions, or login requirements.
+
+It unifies four major local AI capabilities into one high-performance desktop interface:
+1. **🎨 Image Generation (Stable Diffusion):** Generate and edit high-quality images offline using `.safetensors`, `.gguf`, or `.ckpt` model weights.
+2. **💬 Text Chat (LLMs):** Converse privately with open-source language models (GGUF format) powered by official, high-performance `llama.cpp` backends.
+3. **🎙️ Speech-to-Text (Whisper):** Transcribe voice recordings and speech to text in real-time with an integrated `whisper.cpp` engine.
+4. **🗣️ Text-to-Speech (Kokoro TTS):** Convert text outputs into highly natural, lifelike vocal audio offline using the `Kokoro-82M` ONNX model.
+
+---
+
+## <a id="key-features"></a>🌟 Key Features
+
+*   **100% Offline & Private:** Run inferences locally. No internet, telemetry, cloud logging, or API keys required.
+*   **Zero-Install Portability:** Entire runtime (Node.js, models, GPU backends) is self-contained. Zero global system environment changes.
+*   **Auto-Configured Acceleration:** Auto-detects hardware specs to load CUDA (Nvidia), ROCm (AMD), Vulkan (Intel/AMD/NVIDIA), Metal (macOS), or OpenVINO (Intel NPU) backends.
+*   **Integrated Model Manager:** Paste Hugging Face URLs to download weights directly, or drag-and-drop local weights to import them.
+*   **Live Performance Monitor:** Track CPU, RAM, GPU, and VRAM utilization in real-time directly inside the web UI.
+*   **Local Output Gallery:** Saves generated images side-by-side with prompt parameters and metadata JSON files.
+
+---
+
+## <a id="workspace-architecture"></a>⚙️ Workspace & Engine Architecture
+
+To avoid exhausting system RAM or VRAM, text and image engines are mutually exclusive by default. You can switch between workspaces inside the UI:
+
+*   **Image Generation Workspace:** Uses a dedicated `stable-diffusion.cpp` backend node. Model weights are stored in `app/models/`.
+*   **Text Chat Workspace:** Uses a portable `llama.cpp` server backend. Model weights (.gguf) are stored in `app/llm-models/`. A small Qwen2.5 Coder starter model can be downloaded directly from the Text Chat panel.
+*   **Speech Worker (Whisper):** Runs a localized `whisper-cli` process to convert your vocal input to text.
+*   **Audio Output (Kokoro TTS):** Utilizes `kokoro-js` locally on the server side to read responses in natural voices.
+
+---
+
+## <a id="folder-architecture"></a>📁 Folder Architecture
+
+```
+Uncensored-AI-Studio/
+├── windows.bat                # Windows Launcher (Double-click entrypoint)
+├── linux.sh                   # Linux Launcher (Terminal entrypoint)
+├── mac.sh                     # macOS Launcher (Terminal entrypoint)
+├── LICENSE                    # MIT Open Source License
+├── .gitignore                 # Excludes models and output images from version control
+├── README.md                  # Detailed system documentation
+├── scripts/
+│   ├── setup/                 # Platform setup and backend installers
+│   ├── reset/                 # Clean install & environment repair
+│   ├── server/                # UI web server and backend lifecycle manager
+│   ├── workers/               # Local worker processes
+│   ├── build/                 # Optional source build helpers
+│   └── config/                # Runtime configuration catalogs
+└── app/
+    ├── frontend/              # UI source code (Vite + React)
+    ├── models/                # Place image weights here (.safetensors, .gguf, .ckpt)
+    ├── llm-models/            # Place text GGUF weights here
+    └── outputs/               # Saved images and parameters metadata
+```
+
+---
+
+## <a id="getting-started"></a>🚀 Getting Started
+
+Ensure you have a modern web browser installed. Follow the quick guide below for your platform:
+
+### Windows Setup
+
+1. **Launch:** Double-click **`windows.bat`**.
+   > [!NOTE]
+   > On the first run, the script will automatically download a portable Node.js runtime and configure pre-compiled GPU/CPU backend binaries.
 2. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
 3. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
 
-### Linux
-1. **Check compatibility:** Prebuilt Linux backends are built on Ubuntu 24.04 and require **glibc 2.38+**. Run `ldd --version` to verify.
-2. **Launch:** Open a terminal in the project folder and run **`./linux.sh`** (downloads portable Node.js and pre-compiled GPU backend binaries on first run).
-   - NVIDIA GPU users will be prompted if they want to set up the high-performance **CUDA** backend (which attempts to download a prebuilt binary first and automatically compiles from source as a fallback if conflicts are found).
-   - For maximum AMD GPU performance, use **`./linux.sh --max-perf`** on first setup (adds the ROCm backend).
-   - For Intel Core Ultra NPU support, install the Intel Linux NPU driver, then run **`./linux.sh --setup-openvino`**.
-3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
-4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
+### Linux Setup
 
-### macOS
-1. **Check compatibility:** The prebuilt macOS backend is for **Apple Silicon (M1 or newer)** and uses **Metal** GPU acceleration. *(Note: macOS Intel hardware is completely unsupported and has not been tested.)*
-2. **Launch:** Open Terminal in the project folder and run **`./mac.sh`** (downloads portable Node.js and the pre-compiled Metal backend on first run).
-3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
-4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
+1. **Make executable:** Open a terminal in the project folder and make the script executable:
+   ```bash
+   chmod +x linux.sh
+   ```
+2. **Launch:** Run **`./linux.sh`**.
+   - **NVIDIA GPU Users:** You will be prompted to set up the high-performance **CUDA** backend (downloads prebuilt or automatically compiles from source as a fallback).
+   - **AMD Radeon Performance:** Run with **`./linux.sh --max-perf`** to add the ROCm backend (~1.3 GB download).
+   - **Intel Core Ultra NPU:** Run with **`./linux.sh --setup-openvino`** to configure Intel NPU support (requires Intel Linux NPU driver).
+3. **Add Models:** Drop your weights into `app/models/` or download them via the **Model Manager** tab.
+4. **Generate:** Open `http://localhost:1420` in your browser.
 
----
+### macOS Setup
 
-## ✨ Features
-*   **100% Offline & Private:** Inference runs completely locally on your hardware.
-*   **Auto-Detected GPU Acceleration:** Configures **CUDA** for Nvidia cards, **ROCm** for AMD cards, **Vulkan** for AMD/Intel/NVIDIA fallback, and **Metal** for Apple Silicon Macs.
-*   **Zero System Footprint:** Node.js is sandboxed inside the folder. No global environment paths are altered.
-*   **Integrated Model Manager:** Paste a Hugging Face URL to download weights directly, or drag-and-drop local weight files to import them.
-*   **Real-time Telemetry:** Monitor RAM, VRAM, CPU, and GPU load directly in the UI.
-*   **Local Gallery:** Saves generated PNGs alongside prompt metadata JSONs to `app/outputs/`.
-
----
-
-## 📁 Repository Structure
-```
-local-ai-image-generator/
-|-- windows.bat                # Main double-click entrypoint (Windows)
-|-- linux.sh                   # Main terminal entrypoint (Linux)
-|-- mac.sh                     # Main terminal entrypoint (macOS)
-|-- PLAN.md                    # Linux port implementation plan
-|-- LICENSE                    # MIT Open Source license
-|-- .gitignore
-|-- README.md
-|-- scripts/
-|   |-- setup/                 # Platform setup and backend installers
-|   |-- reset/                 # Runtime cleanup scripts
-|   |-- server/                # UI server and backend lifecycle manager
-|   |-- workers/               # Local worker processes
-|   |-- build/                 # Optional source build helpers
-|   `-- config/                # Runtime configuration catalogs
-`-- app/
-    |-- frontend/              # UI source code (Vite + React)
-    |-- models/                # Place weights here (.safetensors, .gguf, .ckpt)
-    `-- outputs/               # Saved images and parameters metadata
+1. **Make executable:** Open a terminal in the project folder and make the script executable:
+   ```bash
+   chmod +x mac.sh
+   ```
+2. **Launch:** Run **`./mac.sh`**.
+   > [!IMPORTANT]
+   > The prebuilt macOS backend is optimized for **Apple Silicon (M1 or newer)** and uses **Metal** GPU acceleration. *(macOS Intel hardware is completely unsupported)*.
+3. **Add Models:** Drop your weights into `app/models/` or download them via the **Model Manager** tab.
+4. **Generate:** Open `http://localhost:1420` in your browser.
 
 ---
 
-## 🖥️ GPU Compatibility Matrix
+## <a id="hardware-compatibility-acceleration"></a>🖥️ Hardware Compatibility & Acceleration
 
 ### Windows
 
@@ -121,52 +165,53 @@ local-ai-image-generator/
 | :--- | :--- | :--- | :--- |
 | **Apple Silicon (M1 or newer)** | Metal | CPU | Uses the official Darwin arm64 stable-diffusion.cpp backend. |
 
-**System requirements:**
-- **64-bit Windows 10 or Windows 11** is required for the portable Node.js 22 runtime used by the Windows launcher.
-- **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.).
-- The setup script will warn you if your glibc is older. You can still run setup, but the prebuilt backends will not start.
-- **Linux OpenVINO NPU:** Intel Core Ultra, x86_64 Linux, kernel 6.6+, a working `/dev/accel/accel0` device, Python 3 with `venv`, and the Intel Linux NPU driver are required.
-- **Apple Silicon (M1 or newer)** is required for the prebuilt macOS Metal backend. *(Note: macOS Intel hardware is completely unsupported and has not been tested.)*
-
-**Linux setup modes:**
-- **Default (`./linux.sh`)**: Downloads CPU + Vulkan backends (~120–150 MB). If an NVIDIA GPU is detected, prompts to set up CUDA (attempts to download prebuilt, otherwise compiles from source).
-- **Maximum Performance (`./linux.sh --max-perf`)**: Also downloads the ROCm backend. Total download ~1.3 GB.
-- **Intel NPU (`./linux.sh --setup-openvino`)**: Creates a local OpenVINO Python environment and verifies that the Intel NPU driver exposes an `NPU` device.
+> [!IMPORTANT]
+> **System Requirements & Notes:**
+> - **64-bit Windows 10 or Windows 11** is required for the portable Node.js 22 runtime used by the Windows launcher.
+> - **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.). The setup script will warn you if your glibc is older.
+> - **Linux OpenVINO NPU:** Intel Core Ultra, x86_64 Linux, kernel 6.6+, a working `/dev/accel/accel0` device, Python 3 with `venv`, and the Intel Linux NPU driver are required.
 
 ---
 
-## ⏱️ Performance Benchmarks
+## <a id="troubleshooting-faq"></a>🛠️ Troubleshooting & FAQ
 
-Typical generation times for an image with **20 steps** (e.g. 512x512 resolution; actual times can vary depending on specific hardware specifications, clock speeds, and system load):
+<details>
+  <summary><strong> Reset Environment: If a build fails or you want to clear dependencies</strong></summary>
+  <p>Run <code>scripts/reset/reset.ps1</code> (Windows) or <code>scripts/reset/reset.sh</code> (Linux/macOS). This will clear temporary compilation and package caches to repair your environment. <em>(Note: This preserves your model weights and generated output images).</em></p>
+</details>
 
-| Operating System | Backend / Hardware | Typical Time (512x512) | Notes |
-| :--- | :--- | :--- | :--- |
-| **Windows** | NVIDIA RTX (CUDA) | ~10 seconds | Native CUDA with Tensor Core acceleration. |
-| **Windows** | AMD Radeon / Intel Arc (Vulkan) | ~89 seconds | Cross-vendor Vulkan GPU fallback. |
-| **Windows** | NVIDIA GTX (Vulkan) | ~30 seconds | Vulkan is faster than CUDA on legacy GTX cards. |
-| **Windows** | CPU | 150 - 300+ seconds | Legacy fallback, highly dependent on CPU cores. |
-| **Linux** | NVIDIA RTX (CUDA) | ~10 seconds | Automated source-build / prebuilt CUDA. |
-| **Linux** | AMD Radeon (ROCm) | ~15 - 30 seconds | Native AMD performance (requires ROCm drivers). |
-| **Linux** | NVIDIA GTX (Vulkan) | ~29 seconds | Tested on GTX 1650 (25.5s sampling, 3.7s decode). |
-| **Linux** | AMD / Intel Arc (Vulkan) | ~89 seconds | Vulkan API acceleration. |
-| **Linux** | Intel Core Ultra (OpenVINO NPU) | ~15 - 40 seconds | Dedicated Intel NPU hardware acceleration. |
-| **Linux** | CPU | 150 - 300+ seconds | Logical thread computation. |
-| **macOS** | Apple Silicon M-Series (Metal GPU) | ~12 - 25 seconds | Native Metal backend on Apple Silicon. |
-| **macOS** | Apple Silicon ANE (Apple NPU) | ~10 - 18 seconds | CoreML compilation on Apple Neural Engine. |
+<details>
+  <summary><strong> Linux backends fail to start with <code>GLIBC_2.38 not found</code></strong></summary>
+  <p>The prebuilt binaries require glibc 2.38+ (e.g. Ubuntu 24.04). If your distribution uses an older glibc version, you can upgrade your operating system or compile the backend from source (see the <a href="#building-from-source">Building From Source</a> guide below).</p>
+</details>
+
+<details>
+  <summary><strong> Port Conflicts: Default port address already busy</strong></summary>
+  <p>The web user interface runs on port <code>1420</code> by default. The GPU backend manager attempts to bind to port <code>8080</code> first, then automatically detects and falls back to a free system port if <code>8080</code> is already occupied.</p>
+</details>
+
+<details>
+  <summary><strong> Linux ROCm not loading for AMD Radeon GPUs</strong></summary>
+  <p>Ensure your AMD GPU hardware and host kernel are fully compatible with ROCm 7.13. If ROCm fails to initialize correctly, the application will automatically fall back to Vulkan acceleration.</p>
+</details>
+
+<details>
+  <summary><strong> Windows exits with code <code>3221225781</code> (0xC0000135)</strong></summary>
+  <p>This code means Windows could not locate a required backend DLL:</p>
+  <ul>
+    <li><strong>For AMD/Intel Vulkan:</strong> Update your GPU driver to one with full Vulkan runtime support, then rerun the setup script to restore <code>app/backend/win/vulkan/</code>.</li>
+    <li><strong>For NVIDIA CUDA:</strong> Install or update your NVIDIA graphics driver, then rerun the setup script to restore the CUDA runtime DLLs.</li>
+  </ul>
+</details>
+
+<details>
+  <summary><strong> Generation shows "server is not responding or crashed"</strong></summary>
+  <p>This indicates that the local backend engine process terminated. Check your launch terminal (where you executed <code>windows.bat</code>, <code>./linux.sh</code>, or <code>./mac.sh</code>) for the exact console error. Common causes include glibc version mismatches, missing Vulkan drivers, or system out-of-memory (OOM) issues.</p>
+</details>
 
 ---
 
-## 🛠️ Troubleshooting
-*   **Reset Environment:** If a build fails or you want to clear dependencies, run `scripts/reset/reset.ps1` (Windows) or `scripts/reset/reset.sh` (Linux/macOS). (This preserves your models and generated images).
-*   **Linux backends fail to start with `GLIBC_2.38' not found`:** The prebuilt binaries require glibc 2.38+ (Ubuntu 24.04). Upgrade your distribution or build stable-diffusion.cpp from source (see below).
-*   **Port Conflicts:** The frontend uses `1420` by default. The backend tries `8080` first, then automatically falls back to a free port if `8080` is already busy.
-*   **Linux ROCm not loading:** Make sure your AMD GPU and kernel are compatible with ROCm 7.13. The app will automatically fall back to Vulkan if ROCm cannot initialize.
-*   **Windows exits with code `3221225781`:** This is `0xC0000135`, which means Windows could not load a required backend DLL. For AMD/Intel Vulkan, update the GPU driver with Vulkan support, then rerun setup so `app/backend/win/vulkan/` is repaired. For NVIDIA CUDA, update the NVIDIA driver and rerun setup so CUDA runtime DLLs are restored.
-*   **Generation shows \"server is not responding or crashed\":** The backend process exited. Check the terminal where you ran `./linux.sh` or `./mac.sh` for the exact error (common causes are glibc mismatch, missing Vulkan drivers, or out-of-memory).
-
----
-
-## 🔨 Building Linux Backends From Source
+## <a id="building-from-source"></a>🔨 Building From Source
 
 The setup script (`scripts/setup/setup.sh`) now automates building and setting up the CUDA backend from source when selected. If you want to manually build all backends (CPU, Vulkan, and CUDA) at once, you can run the included `scripts/build/build_from_source.sh` script.
 
@@ -207,7 +252,7 @@ cmake .. -DSD_METAL=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
 
 # 4. Copy the binaries into this project
-cp bin/sd* /path/to/Local-AI-Image-Generator/app/backend/linux/<backend>/
+cp bin/sd* /path/to/Uncensored-AI-Studio/app/backend/linux/<backend>/
 ```
 
 After copying, rename the server binary to match what `scripts/server/serve.cjs` expects:
@@ -218,5 +263,6 @@ Then restart the app with `./linux.sh` (Linux) or `./mac.sh` (macOS).
 
 ---
 
-## 📝 License
+## <a id="licensing"></a>📝 License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file. Bundles [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (MIT License). Model weights are subject to their respective creators' licenses.

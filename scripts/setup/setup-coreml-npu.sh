@@ -44,7 +44,7 @@ coreml_venv_ready() {
 
 echo ""
 echo "  ============================================================"
-echo "   Local AI Image Generator - Apple Silicon CoreML NPU Setup"
+echo "   Uncensored AI Studio - Apple Silicon CoreML NPU Setup"
 echo "  ============================================================"
 echo ""
 

@@ -24,7 +24,7 @@ function Download-File {
     Write-Host "   >>  Downloading $Label..."
     Enable-Tls12
     $client = New-Object System.Net.WebClient
-    $client.Headers.Add("User-Agent", "Local-AI-Image-Generator")
+    $client.Headers.Add("User-Agent", "Uncensored-AI-Studio")
     try {
         $client.DownloadFile($Url, $DestPath)
     } finally {
