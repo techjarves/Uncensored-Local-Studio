@@ -194,23 +194,69 @@ detect_gpu_vendor() {
   echo "$vendor"
 }
 
-# Official Linux binaries are built on Ubuntu 24.04 and link against glibc 2.38+.
-# This routine prints a warning on older distributions so users know upfront.
-check_glibc() {
-  local required="2.38"
-  local current=""
+# Official Linux binaries are built on Ubuntu 24.04 and link against glibc 2.38+
+# plus libstdc++ with GLIBCXX_3.4.32+. Stop early on older distributions so
+# setup does not appear successful when the backend cannot start.
+version_at_least() {
+  local current="$1" required="$2"
+  [[ "$(printf '%s\n' "$required" "$current" | sort -V | head -n1)" == "$required" ]]
+}
+
+detect_glibcxx_version() {
+  local libstdcpp=""
+  if command -v ldconfig >/dev/null 2>&1; then
+    libstdcpp="$(ldconfig -p 2>/dev/null | awk '/libstdc\+\+\.so\.6/{print $NF; exit}')"
+  fi
+  if [[ -z "$libstdcpp" ]]; then
+    for candidate in /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib64/libstdc++.so.6 /lib/x86_64-linux-gnu/libstdc++.so.6; do
+      if [[ -f "$candidate" ]]; then
+        libstdcpp="$candidate"
+        break
+      fi
+    done
+  fi
+  if [[ -n "$libstdcpp" && -f "$libstdcpp" ]] && command -v strings >/dev/null 2>&1; then
+    strings "$libstdcpp" 2>/dev/null | grep -oE 'GLIBCXX_[0-9]+\.[0-9]+\.[0-9]+' | sed 's/GLIBCXX_//' | sort -V | tail -n1
+  fi
+}
+
+check_linux_runtime_abi() {
+  local required_glibc="2.38"
+  local required_glibcxx="3.4.32"
+  local current_glibc=""
+  local current_glibcxx=""
+  local unsupported=0
+
   if command -v ldd >/dev/null 2>&1; then
-    current="$(ldd --version 2>/dev/null | head -n1 | grep -oP '[0-9]+\.[0-9]+' | head -n1 || true)"
+    current_glibc="$(ldd --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1 || true)"
   fi
-  if [[ -z "$current" ]]; then
-    print_warn "Could not detect glibc version. Prebuilt Linux backends require glibc $required+ (Ubuntu 24.04)."
-    return
+  current_glibcxx="$(detect_glibcxx_version || true)"
+
+  if [[ -z "$current_glibc" ]]; then
+    print_warn "Could not detect glibc version. Prebuilt Linux backends require glibc $required_glibc+ (Ubuntu 24.04)."
+  elif ! version_at_least "$current_glibc" "$required_glibc"; then
+    print_fail "Detected glibc $current_glibc. Prebuilt Linux backends require glibc $required_glibc+ (Ubuntu 24.04 or newer)."
+    unsupported=1
   fi
-  if [[ "$(printf '%s\n' "$required" "$current" | sort -V | head -n1)" != "$required" ]]; then
-    print_warn "Detected glibc $current. Prebuilt Linux backends require glibc $required+ (Ubuntu 24.04)."
-    print_info "You can still use the app, but the downloaded backends will not start on this system."
-    print_info "To fix: upgrade to Ubuntu 24.04+ or build stable-diffusion.cpp from source (see README)."
+
+  if [[ -z "$current_glibcxx" ]]; then
+    print_warn "Could not detect GLIBCXX version. Prebuilt Linux backends require GLIBCXX_$required_glibcxx+."
+  elif ! version_at_least "$current_glibcxx" "$required_glibcxx"; then
+    print_fail "Detected GLIBCXX_$current_glibcxx. Prebuilt Linux backends require GLIBCXX_$required_glibcxx+."
+    unsupported=1
   fi
+
+  if [[ $unsupported -ne 0 ]]; then
+    print_info "CyberRealistic and other valid models will fail before loading on this OS because the backend binary cannot start."
+    print_info "Fix: use Ubuntu 24.04+, Fedora 40+, another glibc 2.38+ distro, or build stable-diffusion.cpp from source on this machine."
+    if [[ "${UAIS_ALLOW_UNSUPPORTED_LINUX:-0}" == "1" ]]; then
+      print_warn "Continuing anyway because UAIS_ALLOW_UNSUPPORTED_LINUX=1 is set."
+      return 0
+    fi
+    return 1
+  fi
+
+  print_ok "Linux runtime ABI ready: glibc $current_glibc, GLIBCXX_$current_glibcxx"
 }
 
 copy_binaries_from_extracted() {
@@ -255,7 +301,10 @@ copy_macos_backend_from_extracted() {
 print_header
 
 if [[ "$PLATFORM" == "Linux" ]]; then
-  check_glibc
+  if ! check_linux_runtime_abi; then
+    print_fail "Linux setup stopped before downloading incompatible backend binaries."
+    exit 1
+  fi
 fi
 
 TOTAL_STEPS=7

@@ -64,58 +64,83 @@ function Invoke-RichDownload {
     Write-Host ""
 
     $barWidth  = 48
-    $lastBytes = [long]0
-    $lastTime  = [DateTime]::Now
 
-    try {
-        Enable-Tls12
-        $req    = [System.Net.HttpWebRequest]::Create($Url)
-        $req.UserAgent = "Mozilla/5.0"
-        $resp   = $req.GetResponse()
-        $total  = [long]$resp.ContentLength
-        $stream = $resp.GetResponseStream()
-        $out    = [System.IO.File]::Create($Dest)
-        $buf    = New-Object byte[] 65536
-        $done   = [long]0
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $lastBytes = [long]0
+        $lastTime  = [DateTime]::Now
+        $resp = $null
+        $stream = $null
+        $out = $null
 
-        while ($true) {
-            $read = $stream.Read($buf, 0, $buf.Length)
-            if ($read -le 0) { break }
-            $out.Write($buf, 0, $read)
-            $done += $read
+        try {
+            if (Test-Path $Dest) { Remove-Item $Dest -Force }
+            Enable-Tls12
+            $req    = [System.Net.HttpWebRequest]::Create($Url)
+            $req.UserAgent = "Mozilla/5.0"
+            $req.Timeout = 300000
+            $req.ReadWriteTimeout = 300000
+            $resp   = $req.GetResponse()
+            $total  = [long]$resp.ContentLength
+            $stream = $resp.GetResponseStream()
+            $out    = [System.IO.File]::Create($Dest)
+            $buf    = New-Object byte[] 65536
+            $done   = [long]0
 
-            $now     = [DateTime]::Now
-            $elapsed = ($now - $lastTime).TotalSeconds
-            if ($elapsed -ge 0.35) {
-                $speed     = ($done - $lastBytes) / $elapsed
-                $lastBytes = $done
-                $lastTime  = $now
-                $pct  = if ($total -gt 0) { [int](($done / $total) * 100) } else { 0 }
-                $fill = [int](($pct / 100) * $barWidth)
-                $bar  = ("#" * $fill) + ("-" * ($barWidth - $fill))
+            while ($true) {
+                $read = $stream.Read($buf, 0, $buf.Length)
+                if ($read -le 0) { break }
+                $out.Write($buf, 0, $read)
+                $done += $read
 
-                $eta = ""
-                if ($speed -gt 0 -and $total -gt 0) {
-                    $rem = [int](($total - $done) / $speed)
-                    $eta = "  ETA $([int]($rem/60))m$($rem%60)s"
+                $now     = [DateTime]::Now
+                $elapsed = ($now - $lastTime).TotalSeconds
+                if ($elapsed -ge 0.35) {
+                    $speed     = ($done - $lastBytes) / $elapsed
+                    $lastBytes = $done
+                    $lastTime  = $now
+                    $pct  = if ($total -gt 0) { [int](($done / $total) * 100) } else { 0 }
+                    $fill = [int](($pct / 100) * $barWidth)
+                    $bar  = ("#" * $fill) + ("-" * ($barWidth - $fill))
+
+                    $eta = ""
+                    if ($speed -gt 0 -and $total -gt 0) {
+                        $rem = [int](($total - $done) / $speed)
+                        $eta = "  ETA $([int]($rem/60))m$($rem%60)s"
+                    }
+
+                    $dl  = Format-Bytes $done
+                    $tot = if ($total -gt 0) { " / " + (Format-Bytes $total) } else { "" }
+                    $spd = Format-Speed $speed
+                    Write-Host -NoNewline "`r  [$bar] $pct%  $dl$tot  $spd$eta   "
                 }
-
-                $dl  = Format-Bytes $done
-                $tot = if ($total -gt 0) { " / " + (Format-Bytes $total) } else { "" }
-                $spd = Format-Speed $speed
-                Write-Host -NoNewline "`r  [$bar] $pct%  $dl$tot  $spd$eta   "
             }
+
+            if ($total -gt 0 -and $done -ne $total) {
+                throw "Download ended early: $(Format-Bytes $done) of $(Format-Bytes $total) received."
+            }
+
+            Write-Host "`r  [$("#" * $barWidth)] 100%  $(Format-Bytes $done)  Done!                         " -ForegroundColor Green
+            Write-Host ""
+            return $true
+        } catch {
+            Write-Host ""
+            if ($attempt -lt 3) {
+                Print-Warn "Download attempt $attempt failed: $_"
+                Print-Info "Retrying download..."
+                Start-Sleep -Seconds (2 * $attempt)
+            } else {
+                Print-Fail "Download failed after $attempt attempts: $_"
+            }
+        } finally {
+            if ($out) { $out.Close() }
+            if ($stream) { $stream.Close() }
+            if ($resp) { $resp.Close() }
         }
 
-        $out.Close(); $stream.Close()
-        Write-Host "`r  [$("#" * $barWidth)] 100%  $(Format-Bytes $done)  Done!                         " -ForegroundColor Green
-        Write-Host ""
-        return $true
-    } catch {
-        Write-Host ""
-        Print-Fail "Download failed: $_"
-        return $false
+        if (Test-Path $Dest) { Remove-Item $Dest -Force -ErrorAction SilentlyContinue }
     }
+
+    return $false
 }
 
 function Expand-WithProgress {
@@ -297,9 +322,11 @@ if ($hasNvidia) {
     $backendDest = Join-Path $appDir "backend\win\cuda"
     $backendExe  = Join-Path $backendDest "sd-cuda.exe"
     $backendDll  = Join-Path $backendDest "stable-diffusion.dll"
+    $cudaBackendReady = $false
     
     if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
         Print-OK "CUDA GPU backend binaries already ready."
+        $cudaBackendReady = $true
     } else {
         $backendZip = Join-Path $toolsDir "sd-cuda.zip"
         New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
@@ -310,59 +337,63 @@ if ($hasNvidia) {
             -Dest $backendZip `
             -Label "stable-diffusion.cpp CUDA Backend (Windows x64)"
 
-        if (-not $ok) { Print-Fail "Cannot download CUDA backend binaries."; Read-Host; exit 1 }
-
-        $tempExt = Join-Path $toolsDir "sd-cuda-temp"
-        Expand-WithProgress -ZipPath $backendZip -Destination $tempExt -Label "CUDA Backend"
-        Remove-Item $backendZip -Force
-
-        # Move files and rename sd.exe/sd-server.exe to sd-cuda.exe
-        if (Test-Path $tempExt) {
-            $extractedExe = Join-Path $tempExt "bin\sd-server.exe"
-            if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "sd-server.exe" }
-            if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "bin\sd.exe" }
-            if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "sd.exe" }
-            
-            $extractedDll = Join-Path $tempExt "bin\stable-diffusion.dll"
-            if (-not (Test-Path $extractedDll)) { $extractedDll = Join-Path $tempExt "stable-diffusion.dll" }
-
-            if (Test-Path $extractedExe) { Copy-Item $extractedExe $backendExe -Force }
-            if (Test-Path $extractedDll) { Copy-Item $extractedDll $backendDll -Force }
-            
-            # Copy any other DLLs or EXEs
-            Get-ChildItem $tempExt -Filter "*.dll" -Recurse | ForEach-Object { Copy-Item $_.FullName $backendDest -Force }
-            Get-ChildItem $tempExt -Filter "*.exe" -Recurse | ForEach-Object {
-                if ($_.FullName -ne $extractedExe) { Copy-Item $_.FullName $backendDest -Force }
-            }
-            Remove-Item $tempExt -Recurse -Force
-        }
-
-        if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
-            Print-OK "CUDA GPU backend binaries installed successfully!"
+        if (-not $ok) {
+            Print-Warn "Cannot download CUDA backend binaries. Continuing with the Vulkan backend fallback."
         } else {
-            Print-Fail "Failed to copy backend binaries to app/backend/win/cuda/."
-            Read-Host; exit 1
+            $tempExt = Join-Path $toolsDir "sd-cuda-temp"
+            Expand-WithProgress -ZipPath $backendZip -Destination $tempExt -Label "CUDA Backend"
+            Remove-Item $backendZip -Force
+
+            # Move files and rename sd.exe/sd-server.exe to sd-cuda.exe
+            if (Test-Path $tempExt) {
+                $extractedExe = Join-Path $tempExt "bin\sd-server.exe"
+                if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "sd-server.exe" }
+                if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "bin\sd.exe" }
+                if (-not (Test-Path $extractedExe)) { $extractedExe = Join-Path $tempExt "sd.exe" }
+                
+                $extractedDll = Join-Path $tempExt "bin\stable-diffusion.dll"
+                if (-not (Test-Path $extractedDll)) { $extractedDll = Join-Path $tempExt "stable-diffusion.dll" }
+
+                if (Test-Path $extractedExe) { Copy-Item $extractedExe $backendExe -Force }
+                if (Test-Path $extractedDll) { Copy-Item $extractedDll $backendDll -Force }
+                
+                # Copy any other DLLs or EXEs
+                Get-ChildItem $tempExt -Filter "*.dll" -Recurse | ForEach-Object { Copy-Item $_.FullName $backendDest -Force }
+                Get-ChildItem $tempExt -Filter "*.exe" -Recurse | ForEach-Object {
+                    if ($_.FullName -ne $extractedExe) { Copy-Item $_.FullName $backendDest -Force }
+                }
+                Remove-Item $tempExt -Recurse -Force
+            }
+
+            if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+                Print-OK "CUDA GPU backend binaries installed successfully!"
+                $cudaBackendReady = $true
+            } else {
+                Print-Warn "Failed to copy CUDA backend binaries. Continuing with the Vulkan backend fallback."
+            }
         }
     }
 
-    $cudaDllsExist = (Test-Path (Join-Path $backendDest "cublas64_12.dll")) -and `
-                     (Test-Path (Join-Path $backendDest "cublasLt64_12.dll")) -and `
-                     (Test-Path (Join-Path $backendDest "cudart64_12.dll"))
+    if ($cudaBackendReady) {
+        $cudaDllsExist = (Test-Path (Join-Path $backendDest "cublas64_12.dll")) -and `
+                         (Test-Path (Join-Path $backendDest "cublasLt64_12.dll")) -and `
+                         (Test-Path (Join-Path $backendDest "cudart64_12.dll"))
 
-    if (-not $cudaDllsExist) {
-        Print-Info "CUDA runtime DLLs are missing from backend folder. Downloading portable CUDA v12 runtime..."
-        $dllZip = Join-Path $toolsDir "cuda-dlls.zip"
-        $ok = Invoke-RichDownload `
-            -Url  "https://github.com/ggml-org/llama.cpp/releases/download/b9509/cudart-llama-bin-win-cuda-12.4-x64.zip" `
-            -Dest $dllZip `
-            -Label "CUDA v12 Runtime DLLs (llama.cpp)"
+        if (-not $cudaDllsExist) {
+            Print-Info "CUDA runtime DLLs are missing from backend folder. Downloading portable CUDA v12 runtime..."
+            $dllZip = Join-Path $toolsDir "cuda-dlls.zip"
+            $ok = Invoke-RichDownload `
+                -Url  "https://github.com/ggml-org/llama.cpp/releases/download/b9509/cudart-llama-bin-win-cuda-12.4-x64.zip" `
+                -Dest $dllZip `
+                -Label "CUDA v12 Runtime DLLs (llama.cpp)"
 
-        if ($ok) {
-            Expand-WithProgress -ZipPath $dllZip -Destination $backendDest -Label "CUDA Runtime DLLs"
-            Remove-Item $dllZip -Force
-            Print-OK "CUDA runtime DLLs set up successfully!"
-        } else {
-            Print-Warn "Could not download portable CUDA runtime DLLs automatically. If the app fails to start in CUDA mode, you may need to install the CUDA Toolkit manually."
+            if ($ok) {
+                Expand-WithProgress -ZipPath $dllZip -Destination $backendDest -Label "CUDA Runtime DLLs"
+                Remove-Item $dllZip -Force
+                Print-OK "CUDA runtime DLLs set up successfully!"
+            } else {
+                Print-Warn "Could not download portable CUDA runtime DLLs automatically. If the app fails to start in CUDA mode, you may need to install the CUDA Toolkit manually."
+            }
         }
     }
 

@@ -35,7 +35,8 @@ import {
   downloadTtsModel,
   deleteTtsModel,
   importTtsModel,
-  getTtsStatus
+  getTtsStatus,
+  isLocalServerMode
 } from "../services/api";
 
 const MODEL_FILTERS = [
@@ -605,9 +606,8 @@ function ModelManager({
     }
 
     const isTauriDesktop = typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
-    const isLocalServerMode = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
-    if (!isTauriDesktop && !isLocalServerMode) {
+    if (!isTauriDesktop && !isLocalServerMode()) {
       showAlert({ title: "Server Required", message: "Model download requires the local server.", danger: true });
       return;
     }
@@ -959,11 +959,10 @@ function ModelManager({
 
   const performLoadModel = async (modelId, forcedConstraints = null) => {
     const isTauriDesktop = typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
-    const isLocalServerMode = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     const backendStatus = await getBackendStatus();
     const backendPort = backendStatus?.port || 8080;
     
-    if (!isTauriDesktop && !isLocalServerMode) {
+    if (!isTauriDesktop && !isLocalServerMode()) {
       const isAlreadyRunning = await pingServer();
       const modelInfo = getLocalModelInfo(modelId);
       const isOpenVinoModel = modelInfo?.backendType === "openvino-npu";

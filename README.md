@@ -27,6 +27,7 @@
 * [What is Uncensored AI Studio?](#what-is-uncensored-ai-studio)
 * [Key Features](#key-features)
 * [Workspace & Engine Architecture](#workspace-architecture)
+* [Supported Models](#supported-models)
 * [Folder Architecture](#folder-architecture)
 * [Getting Started](#getting-started)
   * [Windows Setup](#windows-setup)
@@ -70,6 +71,46 @@ To avoid exhausting system RAM or VRAM, text and image engines are mutually excl
 *   **Text Chat Workspace:** Uses a portable `llama.cpp` server backend. Model weights (.gguf) are stored in `app/llm-models/`. A small Qwen2.5 Coder starter model can be downloaded directly from the Text Chat panel.
 *   **Speech Worker (Whisper):** Runs a localized `whisper-cli` process to convert your vocal input to text.
 *   **Audio Output (Kokoro TTS):** Utilizes `kokoro-js` locally on the server side to read responses in natural voices.
+
+---
+
+## <a id="supported-models"></a>Supported Models
+
+The app is designed around single-file local models that can be loaded directly by the bundled backend engines.
+
+### Image generation
+
+| Model type | Supported | Put files in | Notes |
+| :--- | :--- | :--- | :--- |
+| Stable Diffusion 1.5 checkpoints | Yes | `app/models/` | Best compatibility. Use `.safetensors` or `.ckpt` files. |
+| SDXL checkpoints | Yes | `app/models/` | Supported as single-file checkpoints. Requires more RAM/VRAM than SD 1.5. |
+| Single-file SD/SDXL GGUF checkpoints | Limited | `app/models/` | Only complete single-file checkpoints are supported. |
+| OpenVINO image model folders | Intel NPU only | `app/openvino-models/` | Download from the Model Manager after running the OpenVINO setup. |
+| CoreML image models | Apple Silicon only | `app/models/` | Requires macOS on Apple Silicon and the CoreML setup path. |
+| Flux, HiDream, Hunyuan, Wan, Qwen Image, Z-Image workflows | No | N/A | These usually require separate diffusion, VAE, and text encoder files and are not one-click checkpoint loads in this app. |
+| LoRA, ControlNet, VAE-only, text-encoder-only, or diffusion-only files | No | N/A | Companion files are not loaded as standalone image models. |
+
+Known-good image models available from the Model Manager:
+
+| Name | Filename | Type | Approx. size | Recommended use |
+| :--- | :--- | :--- | :--- | :--- |
+| Juggernaut XL v9 Lightning | `Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors` | SDXL | 6.6 GB | High-quality photorealism on mid/high tier machines. |
+| DreamShaper XL Lightning | `DreamShaperXL_Lightning.safetensors` | SDXL | 6.6 GB | General SDXL images, fantasy, renders, and illustration. |
+| DreamShaper 8 | `DreamShaper_8_pruned.safetensors` | SD 1.5 | 2.1 GB | Faster, lower-memory image generation. |
+| CyberRealistic V8 | `CyberRealistic_V8_FP16.safetensors` | SD 1.5 | 2.0 GB | Realistic SD 1.5 images and lower-memory systems. |
+| Rev Animated | `rev-animated-v1-2-2.safetensors` | SD 1.5 | 2.0 GB | Stylized/anime SD 1.5 images. |
+| LCM DreamShaper OpenVINO | `OpenVINO/LCM_Dreamshaper_v7-fp16-ov` | OpenVINO | 2.7 GB | Intel Core Ultra NPU test model. |
+
+### Text, speech, and TTS
+
+| Workspace | Supported model files | Put files in | Notes |
+| :--- | :--- | :--- | :--- |
+| Text Chat | `.gguf` llama.cpp models | `app/llm-models/` | Use single-file GGUF chat/instruct models. Vision models may also require a matching `mmproj` file. |
+| Speech-to-Text | whisper.cpp `.bin` models | `app/speech-models/` | Use Whisper GGML/whisper.cpp model files. |
+| Text-to-Speech | Kokoro `.json` manifests and model assets | `app/tts-models/` / `app/tts-runtime/` | Use the built-in Kokoro setup and Model Manager entries. |
+
+> [!NOTE]
+> Linux release binaries are built for Ubuntu 24.04-era systems and require `glibc 2.38+` plus `GLIBCXX_3.4.32+`. On older Ubuntu/Debian VMs, a model such as CyberRealistic may be valid but the backend can still fail before loading it. Upgrade the VM OS or build the backend from source.
 
 ---
 
@@ -193,6 +234,11 @@ Ensure you have a modern web browser installed. Follow the quick guide below for
 <details>
   <summary><strong> Linux ROCm not loading for AMD Radeon GPUs</strong></summary>
   <p>Ensure your AMD GPU hardware and host kernel are fully compatible with ROCm 7.13. If ROCm fails to initialize correctly, the application will automatically fall back to Vulkan acceleration.</p>
+</details>
+
+<details>
+  <summary><strong> Linux uses the integrated GPU instead of the discrete GPU</strong></summary>
+  <p>On dual-GPU Linux systems, Vulkan device order can put the integrated Intel GPU at <code>vulkan0</code> and the discrete AMD/NVIDIA GPU at <code>vulkan1</code>. The launcher now tries to prefer a discrete Vulkan device when <code>vulkaninfo --summary</code> is available. To force a device manually, start the app with <code>SD_VULKAN_DEVICE=vulkan1 ./linux.sh</code> or use another index such as <code>vulkan0</code>/<code>vulkan2</code>.</p>
 </details>
 
 <details>

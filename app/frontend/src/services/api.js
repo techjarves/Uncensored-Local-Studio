@@ -11,8 +11,9 @@ let cachedSpecs = null;
 let cachedBackendPort = null;
 export const EXPECTED_SERVER_BUILD = "text-image-v1";
 
-const isLocalServerMode = () => {
-  return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+export const isLocalServerMode = () => {
+  if (typeof window === "undefined") return false;
+  return window.location.protocol === "http:" || window.location.protocol === "https:";
 };
 
 async function getBackendPort() {
@@ -31,6 +32,9 @@ async function getBackendPort() {
 }
 
 async function getBackendBaseUrl() {
+  if (!isTauri() && isLocalServerMode()) {
+    return "";
+  }
   return `http://127.0.0.1:${await getBackendPort()}`;
 }
 
@@ -224,8 +228,7 @@ export async function listLocalModels() {
     }
   }
 
-  const isLocalServerMode = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-  if (isLocalServerMode) {
+  if (isLocalServerMode()) {
     return await listModelsFromDisk();
   }
 
@@ -1162,8 +1165,7 @@ export async function deleteModel(filename) {
     return await invoke("delete_model_file", { filename });
   }
 
-  const isLocalServerMode = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-  if (isLocalServerMode) {
+  if (isLocalServerMode()) {
     try {
       const res = await fetch("/api/delete-model", {
         method: "POST",

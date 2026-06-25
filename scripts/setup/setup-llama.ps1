@@ -34,57 +34,82 @@ function Download-File {
     param([string]$Url, [string]$DestPath, [string]$Label)
     
     $barWidth  = 48
-    $lastBytes = [long]0
-    $lastTime  = [DateTime]::Now
 
     Write-Host "   >>  Downloading $Label..."
 
-    try {
-        Enable-Tls12
-        $req    = [System.Net.HttpWebRequest]::Create($Url)
-        $req.UserAgent = "Mozilla/5.0"
-        $resp   = $req.GetResponse()
-        $total  = [long]$resp.ContentLength
-        $stream = $resp.GetResponseStream()
-        $out    = [System.IO.File]::Create($DestPath)
-        $buf    = New-Object byte[] 65536
-        $done   = [long]0
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $lastBytes = [long]0
+        $lastTime  = [DateTime]::Now
+        $resp = $null
+        $stream = $null
+        $out = $null
 
-        while ($true) {
-            $read = $stream.Read($buf, 0, $buf.Length)
-            if ($read -le 0) { break }
-            $out.Write($buf, 0, $read)
-            $done += $read
+        try {
+            if (Test-Path $DestPath) { Remove-Item $DestPath -Force }
+            Enable-Tls12
+            $req    = [System.Net.HttpWebRequest]::Create($Url)
+            $req.UserAgent = "Mozilla/5.0"
+            $req.Timeout = 300000
+            $req.ReadWriteTimeout = 300000
+            $resp   = $req.GetResponse()
+            $total  = [long]$resp.ContentLength
+            $stream = $resp.GetResponseStream()
+            $out    = [System.IO.File]::Create($DestPath)
+            $buf    = New-Object byte[] 65536
+            $done   = [long]0
 
-            $now     = [DateTime]::Now
-            $elapsed = ($now - $lastTime).TotalSeconds
-            if ($elapsed -ge 0.35) {
-                $speed     = ($done - $lastBytes) / $elapsed
-                $lastBytes = $done
-                $lastTime  = $now
-                $pct  = if ($total -gt 0) { [int](($done / $total) * 100) } else { 0 }
-                $fill = [int](($pct / 100) * $barWidth)
-                $bar  = ("#" * $fill) + ("-" * ($barWidth - $fill))
+            while ($true) {
+                $read = $stream.Read($buf, 0, $buf.Length)
+                if ($read -le 0) { break }
+                $out.Write($buf, 0, $read)
+                $done += $read
 
-                $eta = ""
-                if ($speed -gt 0 -and $total -gt 0) {
-                    $rem = [int](($total - $done) / $speed)
-                    $eta = "  ETA $([int]($rem/60))m$($rem%60)s"
+                $now     = [DateTime]::Now
+                $elapsed = ($now - $lastTime).TotalSeconds
+                if ($elapsed -ge 0.35) {
+                    $speed     = ($done - $lastBytes) / $elapsed
+                    $lastBytes = $done
+                    $lastTime  = $now
+                    $pct  = if ($total -gt 0) { [int](($done / $total) * 100) } else { 0 }
+                    $fill = [int](($pct / 100) * $barWidth)
+                    $bar  = ("#" * $fill) + ("-" * ($barWidth - $fill))
+
+                    $eta = ""
+                    if ($speed -gt 0 -and $total -gt 0) {
+                        $rem = [int](($total - $done) / $speed)
+                        $eta = "  ETA $([int]($rem/60))m$($rem%60)s"
+                    }
+
+                    $dl  = Format-Bytes $done
+                    $tot = if ($total -gt 0) { " / " + (Format-Bytes $total) } else { "" }
+                    $spd = Format-Speed $speed
+                    Write-Host -NoNewline "`r      [$bar] $pct%  $dl$tot  $spd$eta   "
                 }
-
-                $dl  = Format-Bytes $done
-                $tot = if ($total -gt 0) { " / " + (Format-Bytes $total) } else { "" }
-                $spd = Format-Speed $speed
-                Write-Host -NoNewline "`r      [$bar] $pct%  $dl$tot  $spd$eta   "
             }
+
+            if ($total -gt 0 -and $done -ne $total) {
+                throw "Download ended early: $(Format-Bytes $done) of $(Format-Bytes $total) received."
+            }
+
+            Write-Host "`r      [$("#" * $barWidth)] 100%  $(Format-Bytes $done)  Done!                         " -ForegroundColor Green
+            Write-Host ""
+            return
+        } catch {
+            Write-Host ""
+            if ($attempt -lt 3) {
+                Write-Host "   !!  Download attempt $attempt failed: $_" -ForegroundColor Yellow
+                Write-Host "   >>  Retrying download..." -ForegroundColor Cyan
+                Start-Sleep -Seconds (2 * $attempt)
+            } else {
+                throw "Download failed after $attempt attempts: $_"
+            }
+        } finally {
+            if ($out) { $out.Close() }
+            if ($stream) { $stream.Close() }
+            if ($resp) { $resp.Close() }
         }
 
-        $out.Close(); $stream.Close()
-        Write-Host "`r      [$("#" * $barWidth)] 100%  $(Format-Bytes $done)  Done!                         " -ForegroundColor Green
-        Write-Host ""
-    } catch {
-        Write-Host ""
-        throw "Download failed: $_"
+        if (Test-Path $DestPath) { Remove-Item $DestPath -Force -ErrorAction SilentlyContinue }
     }
 }
 

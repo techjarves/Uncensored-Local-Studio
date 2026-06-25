@@ -587,6 +587,50 @@ function isVirtualOrSoftwareGpu(name) {
          lowercase.includes("vmware");
 }
 
+let cachedPreferredVulkanBackend = null;
+let cachedPreferredVulkanBackendChecked = false;
+function getPreferredVulkanBackendName() {
+  const explicit = String(process.env.SD_VULKAN_DEVICE || process.env.UAIS_VULKAN_DEVICE || "").trim();
+  if (/^vulkan\d+$/i.test(explicit)) return explicit.toLowerCase();
+  if (/^\d+$/.test(explicit)) return `vulkan${explicit}`;
+
+  if (cachedPreferredVulkanBackendChecked) return cachedPreferredVulkanBackend || "vulkan0";
+  cachedPreferredVulkanBackendChecked = true;
+  cachedPreferredVulkanBackend = "vulkan0";
+
+  if (osPlatform !== "linux") return cachedPreferredVulkanBackend;
+  try {
+    const result = spawnSync("vulkaninfo", ["--summary"], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    });
+    const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+    const devices = [];
+    let current = null;
+    for (const line of output.split(/\r?\n/)) {
+      const gpuMatch = line.match(/^\s*GPU(\d+)\s*:/i);
+      if (gpuMatch) {
+        current = { index: Number(gpuMatch[1]), name: "", type: "" };
+        devices.push(current);
+        continue;
+      }
+      if (!current) continue;
+      const nameMatch = line.match(/deviceName\s*=\s*(.+)$/i);
+      if (nameMatch) current.name = nameMatch[1].trim();
+      const typeMatch = line.match(/deviceType\s*=\s*(.+)$/i);
+      if (typeMatch) current.type = typeMatch[1].trim();
+    }
+    const usable = devices.filter((device) => Number.isInteger(device.index) && !isVirtualOrSoftwareGpu(device.name));
+    const discrete = usable.find((device) => /discrete/i.test(device.type));
+    const amd = usable.find((device) => /amd|radeon/i.test(device.name));
+    const selected = discrete || amd || usable[0];
+    if (selected) cachedPreferredVulkanBackend = `vulkan${selected.index}`;
+  } catch (_) {}
+
+  return cachedPreferredVulkanBackend;
+}
+
 let cachedLlamaCudaGpu = null;
 let cachedLlamaCudaGpuChecked = false;
 function detectLlamaCudaGpu() {
@@ -3285,6 +3329,36 @@ function requestJson(url, payload = null, timeoutMs = 120000) {
   });
 }
 
+function proxyImageBackendRequest(req, res) {
+  const headers = { ...req.headers };
+  delete headers.host;
+  headers.host = `127.0.0.1:${PORT_BACKEND}`;
+
+  const proxyReq = http.request({
+    hostname: "127.0.0.1",
+    port: PORT_BACKEND,
+    path: req.url,
+    method: req.method,
+    headers,
+    timeout: 300000,
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 502, {
+      ...proxyRes.headers,
+      "Access-Control-Allow-Origin": "*",
+    });
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on("error", (err) => {
+    json(res, 502, { ok: false, error: `Image backend is not reachable: ${err.message}` });
+  });
+  proxyReq.on("timeout", () => {
+    proxyReq.destroy(new Error("Image backend request timed out"));
+  });
+
+  req.pipe(proxyReq);
+}
+
 function requestHttpsJson(url, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
@@ -4303,6 +4377,7 @@ async function startBackend(settings = {}) {
 
   let args = [];
   const requestedBackend = resolveBackendType(currentSettings.useGpu, currentSettings.backendType, currentSettings.model);
+  const selectedVulkanBackend = requestedBackend === "vulkan" ? getPreferredVulkanBackendName() : "";
 
   const supportsFlags = backendSupportsFlags[backendPath] !== false;
 
@@ -4331,7 +4406,7 @@ async function startBackend(settings = {}) {
       args.push("--rng", "cpu", "--sampler-rng", "cpu");
   } else if (requestedBackend === "vulkan") {
     if (supportsFlags) {
-      args.push("--backend", "vulkan0", "--params-backend", "vulkan0");
+      args.push("--backend", selectedVulkanBackend, "--params-backend", selectedVulkanBackend);
     }
     args.push("--rng", "cpu", "--sampler-rng", "cpu");
   } else if (requestedBackend === "cuda") {
@@ -4348,6 +4423,11 @@ async function startBackend(settings = {}) {
     args.push("--rng", "cpu", "--sampler-rng", "cpu");
   }
 
+  }
+
+  if (requestedBackend === "vulkan" && selectedVulkanBackend) {
+    currentSettings.backendDevice = selectedVulkanBackend;
+    backendLoadState.device = selectedVulkanBackend;
   }
 
   if (requestedBackend !== "apple-npu") {
@@ -4485,6 +4565,11 @@ async function startBackend(settings = {}) {
     process.stderr.write("  [sd-err] " + output);
     updateCoreMLLoadProgress(output);
     const cleanOutput = stripAnsi(output);
+    const runtimeLinkerError = describeLinuxRuntimeLinkerError(cleanOutput);
+    if (runtimeLinkerError) {
+      backendError = runtimeLinkerError;
+      backendLoadState.phase = "Linux runtime is too old for this backend";
+    }
     const deviceMatch = cleanOutput.match(/Device\s+\d+:\s*([^,\r\n]+)/);
     if (deviceMatch) {
       backendLoadState.device = deviceMatch[1].trim();
@@ -5217,6 +5302,22 @@ function describeBackendError(rawError, modelPath) {
   return `${raw}\n\nThe backend could not create the model context. Common causes are a corrupt/incomplete model file, unsupported checkpoint type, or not enough free RAM/VRAM. Delete and re-download the model, then try CPU or Vulkan mode at 512x512.`;
 }
 
+function describeLinuxRuntimeLinkerError(rawError) {
+  const raw = String(rawError || "").trim();
+  const lower = raw.toLowerCase();
+  if (osPlatform !== "linux") return null;
+  if (!lower.includes("glibc") && !lower.includes("libstdc++") && !lower.includes("libc.so.6")) return null;
+
+  const needsGlibc = raw.match(/GLIBC_([0-9.]+)/)?.[1];
+  const needsGlibcxx = raw.match(/GLIBCXX_([0-9.]+)/)?.[1];
+  const requirements = [];
+  if (needsGlibc) requirements.push(`glibc ${needsGlibc}+`);
+  if (needsGlibcxx) requirements.push(`GLIBCXX_${needsGlibcxx}+`);
+  const requirementText = requirements.length ? requirements.join(" and ") : "newer glibc/libstdc++ runtime libraries";
+
+  return `${raw}\n\nThe selected model is not the problem. The Linux backend binary cannot start because this OS is missing ${requirementText}. The bundled Linux backends are built for Ubuntu 24.04-era systems. Use Ubuntu 24.04+, Fedora 40+, another glibc 2.38+ distro, or build stable-diffusion.cpp from source on this machine.`;
+}
+
 function describeBackendExitCode(code, backendPath) {
   const numericCode = Number(code);
   if (osPlatform === "win32" && numericCode === 3221225781) {
@@ -5483,6 +5584,9 @@ const server = http.createServer(async (req, res) => {
     res.end(); return;
   }
 
+  if ((req.url.startsWith("/v1/") || req.url.startsWith("/sdapi/")) && ["GET", "POST"].includes(req.method)) {
+    return proxyImageBackendRequest(req, res);
+  }
   // ── Management API ────────────────────────────────────────────────────────
   // GET /api/health
   if (req.url === "/api/health" && req.method === "GET") {
