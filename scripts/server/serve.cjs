@@ -2230,6 +2230,75 @@ async function stopTts() {
   ttsGenerationState = { active: false, phase: "", progress: 0, model: "", voice: "", output: "" };
 }
 
+function convertFloatWavToPcm16(buffer) {
+  if (!isWaveBuffer(buffer)) return buffer;
+
+  let offset = 12;
+  let fmt = null;
+  let data = null;
+
+  while (offset + 8 <= buffer.length) {
+    const id = buffer.toString("ascii", offset, offset + 4);
+    const size = buffer.readUInt32LE(offset + 4);
+    const start = offset + 8;
+    const end = start + size;
+    if (end > buffer.length) break;
+
+    if (id === "fmt ") {
+      fmt = {
+        audioFormat: buffer.readUInt16LE(start),
+        channels: buffer.readUInt16LE(start + 2),
+        sampleRate: buffer.readUInt32LE(start + 4),
+        bitsPerSample: buffer.readUInt16LE(start + 14),
+      };
+    } else if (id === "data") {
+      data = { start, size };
+    }
+
+    offset = end + (size % 2);
+  }
+
+  if (!fmt || !data || fmt.audioFormat !== 3 || fmt.bitsPerSample !== 32 || fmt.channels < 1) {
+    return buffer;
+  }
+
+  const samples = Math.floor(data.size / 4);
+  const pcmDataSize = samples * 2;
+  const output = Buffer.alloc(44 + pcmDataSize);
+  output.write("RIFF", 0, "ascii");
+  output.writeUInt32LE(36 + pcmDataSize, 4);
+  output.write("WAVE", 8, "ascii");
+  output.write("fmt ", 12, "ascii");
+  output.writeUInt32LE(16, 16);
+  output.writeUInt16LE(1, 20);
+  output.writeUInt16LE(fmt.channels, 22);
+  output.writeUInt32LE(fmt.sampleRate, 24);
+  output.writeUInt32LE(fmt.sampleRate * fmt.channels * 2, 28);
+  output.writeUInt16LE(fmt.channels * 2, 32);
+  output.writeUInt16LE(16, 34);
+  output.write("data", 36, "ascii");
+  output.writeUInt32LE(pcmDataSize, 40);
+
+  for (let i = 0; i < samples; i += 1) {
+    const floatValue = buffer.readFloatLE(data.start + i * 4);
+    const clamped = Math.max(-1, Math.min(1, Number.isFinite(floatValue) ? floatValue : 0));
+    const intValue = clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
+    output.writeInt16LE(intValue, 44 + i * 2);
+  }
+
+  return output;
+}
+
+function ensureBrowserCompatibleTtsWav(filePath) {
+  try {
+    const original = fs.readFileSync(filePath);
+    const converted = convertFloatWavToPcm16(original);
+    if (converted !== original) {
+      fs.writeFileSync(filePath, converted);
+    }
+  } catch (_) {}
+}
+
 function saveTtsOutput(result) {
   const createdAt = new Date().toISOString();
   const stamp = createdAt.replace(/[:.]/g, "-");
@@ -2237,7 +2306,8 @@ function saveTtsOutput(result) {
   const wavFilename = `${base}.wav`;
   const jsonFilename = `${base}.json`;
   const wavPath = path.join(TTS_OUTPUTS, wavFilename);
-  fs.copyFileSync(result.wavPath, wavPath);
+  const wavBuffer = convertFloatWavToPcm16(fs.readFileSync(result.wavPath));
+  fs.writeFileSync(wavPath, wavBuffer);
   const metadata = {
     text: result.text || "",
     model: result.model,
@@ -2269,6 +2339,12 @@ function listTtsOutputs() {
         try {
           const metadata = JSON.parse(fs.readFileSync(filePath, "utf8"));
           const stat = fs.statSync(filePath);
+          if (metadata.audioFile) {
+            const audioPath = path.join(TTS_OUTPUTS, path.basename(String(metadata.audioFile)));
+            if (pathInside(audioPath, TTS_OUTPUTS) && fs.existsSync(audioPath)) {
+              ensureBrowserCompatibleTtsWav(audioPath);
+            }
+          }
           return {
             ...metadata,
             filename: file,
@@ -6894,11 +6970,59 @@ async function getLlmfitRecommendations(useCase = "chat", limit = 10) {
       return json(res, 404, { ok: false, error: "TTS output not found" });
     }
     const ext = path.extname(filePath).toLowerCase();
-    fs.readFile(filePath, (err, data) => {
-      if (err) return json(res, 500, { ok: false, error: err.message });
-      res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream", "Access-Control-Allow-Origin": "*" });
-      res.end(data);
+    if (ext === ".wav") ensureBrowserCompatibleTtsWav(filePath);
+    const stat = fs.statSync(filePath);
+    const contentType = MIME[ext] || "application/octet-stream";
+    const range = req.headers.range;
+
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match) {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${stat.size}`,
+          "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end();
+        return;
+      }
+
+      let start = match[1] ? Number(match[1]) : 0;
+      let end = match[2] ? Number(match[2]) : stat.size - 1;
+      if (!match[1] && match[2]) {
+        const suffixLength = Math.min(Number(match[2]) || 0, stat.size);
+        start = stat.size - suffixLength;
+        end = stat.size - 1;
+      }
+
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end >= stat.size || start > end) {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${stat.size}`,
+          "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end();
+        return;
+      }
+
+      res.writeHead(206, {
+        "Content-Type": contentType,
+        "Content-Length": end - start + 1,
+        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
+      });
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": stat.size,
+      "Accept-Ranges": "bytes",
+      "Access-Control-Allow-Origin": "*",
     });
+    fs.createReadStream(filePath).pipe(res);
     return;
   }
 
