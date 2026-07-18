@@ -120,3 +120,17 @@ test("Windows Vulkan setup repairs issue 10 runtime and RX 580 backend failures"
   assert.match(server, /0xC0000135/);
   assert.match(server, /Microsoft Visual C\+\+ runtime/);
 });
+
+test("Windows setup repairs issue 44 illegal instructions and RTX 50 CUDA runtime", () => {
+  const setup = read("scripts/setup/setup.ps1");
+  const server = read("scripts/server/serve.cjs");
+
+  assert.match(setup, /master-782-b290693\/sd-master-b290693-bin-win-cuda12-x64\.zip/);
+  assert.match(setup, /master-782-b290693\/cudart-sd-bin-win-cu12-x64\.zip/);
+  assert.match(setup, /master-782-b290693\/sd-master-b290693-bin-win-cpu-x64\.zip/);
+  assert.doesNotMatch(setup, /cudart-llama-bin-win-cuda-12\.4-x64/);
+
+  assert.match(server, /3221225501/);
+  assert.match(server, /0xC000001D: illegal CPU instruction/);
+  assert.match(server, /runtime-dispatched Windows backend/);
+});

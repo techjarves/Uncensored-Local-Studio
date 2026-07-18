@@ -253,6 +253,11 @@ Ensure you have a modern web browser installed. Follow the quick guide below for
 </details>
 
 <details>
+  <summary><strong> Windows exits with code <code>3221225501</code> (0xC000001D)</strong></summary>
+  <p>This is an illegal CPU instruction from an older machine-specific Windows backend build; it is not evidence that the model or RTX GPU is unsupported. Rerun <code>scripts/setup/setup.ps1</code> to replace the CPU/CUDA binaries with runtime-dispatched builds and install the matching CUDA 12.8 runtime. The corrected CUDA package includes Blackwell targets for RTX 50-series GPUs.</p>
+</details>
+
+<details>
   <summary><strong> Generation shows "server is not responding or crashed"</strong></summary>
   <p>This indicates that the local backend engine process terminated. Check your launch terminal (where you executed <code>windows.bat</code>, <code>./linux.sh</code>, or <code>./mac.sh</code>) for the exact console error. Common causes include glibc version mismatches, missing Vulkan drivers, or system out-of-memory (OOM) issues.</p>
 </details>

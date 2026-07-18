@@ -341,18 +341,22 @@ Print-Step 2 $steps "Setting up stable-diffusion.cpp CPU backend (app/backend/wi
 $cpuBackendDest = Join-Path $appDir "backend\win\cpu"
 $cpuBackendExe  = Join-Path $cpuBackendDest "sd-cpu.exe"
 $cpuBackendDll  = Join-Path $cpuBackendDest "stable-diffusion.dll"
+$cpuBackendVersionFile = Join-Path $cpuBackendDest ".backend-version"
+$expectedCpuBackendVersion = "master-782-b290693"
+$installedCpuBackendVersion = if (Test-Path $cpuBackendVersionFile) { (Get-Content $cpuBackendVersionFile -Raw).Trim() } else { "" }
 
-if ((Test-Path $cpuBackendExe) -and (Test-Path $cpuBackendDll)) {
+if ((Test-Path $cpuBackendExe) -and (Test-Path $cpuBackendDll) -and ($installedCpuBackendVersion -eq $expectedCpuBackendVersion)) {
     Print-OK "CPU backend binaries already ready."
 } else {
     $cpuBackendZip = Join-Path $toolsDir "sd-cpu.zip"
     New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+    if (Test-Path $cpuBackendDest) { Remove-Item $cpuBackendDest -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $cpuBackendDest | Out-Null
 
     $ok = Invoke-RichDownload `
-        -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-721-8caa3f9/sd-master-8caa3f9-bin-win-avx2-x64.zip" `
+        -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-782-b290693/sd-master-b290693-bin-win-cpu-x64.zip" `
         -Dest $cpuBackendZip `
-        -Label "stable-diffusion.cpp CPU Backend (Windows x64 AVX2)"
+        -Label "stable-diffusion.cpp CPU Backend (Windows x64, runtime dispatch)"
 
     if (-not $ok) { Print-Fail "Cannot download CPU backend binaries."; Read-Host; exit 1 }
 
@@ -380,6 +384,7 @@ if ((Test-Path $cpuBackendExe) -and (Test-Path $cpuBackendDll)) {
     }
 
     if ((Test-Path $cpuBackendExe) -and (Test-Path $cpuBackendDll)) {
+        Set-Content -Path $cpuBackendVersionFile -Value $expectedCpuBackendVersion -Encoding ASCII
         Print-OK "CPU backend binaries installed successfully!"
     } else {
         Print-Fail "Failed to copy backend binaries to app/backend/win/cpu/."
@@ -392,20 +397,24 @@ if ($hasNvidia) {
     $backendDest = Join-Path $appDir "backend\win\cuda"
     $backendExe  = Join-Path $backendDest "sd-cuda.exe"
     $backendDll  = Join-Path $backendDest "stable-diffusion.dll"
+    $backendVersionFile = Join-Path $backendDest ".backend-version"
+    $expectedBackendVersion = "master-782-b290693-cuda12.8.1"
+    $installedBackendVersion = if (Test-Path $backendVersionFile) { (Get-Content $backendVersionFile -Raw).Trim() } else { "" }
     $cudaBackendReady = $false
     
-    if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+    if ((Test-Path $backendExe) -and (Test-Path $backendDll) -and ($installedBackendVersion -eq $expectedBackendVersion)) {
         Print-OK "CUDA GPU backend binaries already ready."
         $cudaBackendReady = $true
     } else {
         $backendZip = Join-Path $toolsDir "sd-cuda.zip"
         New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+        if (Test-Path $backendDest) { Remove-Item $backendDest -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $backendDest | Out-Null
 
         $ok = Invoke-RichDownload `
-            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-721-8caa3f9/sd-master-8caa3f9-bin-win-cuda12-x64.zip" `
+            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-782-b290693/sd-master-b290693-bin-win-cuda12-x64.zip" `
             -Dest $backendZip `
-            -Label "stable-diffusion.cpp CUDA Backend (Windows x64)"
+            -Label "stable-diffusion.cpp CUDA 12.8 Backend (Windows x64)"
 
         if (-not $ok) {
             Print-Warn "Cannot download CUDA backend binaries. Continuing with the Vulkan backend fallback."
@@ -450,12 +459,12 @@ if ($hasNvidia) {
                          (Test-Path (Join-Path $backendDest "cudart64_12.dll"))
 
         if (-not $cudaDllsExist) {
-            Print-Info "CUDA runtime DLLs are missing from backend folder. Downloading portable CUDA v12 runtime..."
+            Print-Info "CUDA runtime DLLs are missing from backend folder. Downloading the matching portable CUDA 12.8 runtime..."
             $dllZip = Join-Path $toolsDir "cuda-dlls.zip"
             $ok = Invoke-RichDownload `
-                -Url  "https://github.com/ggml-org/llama.cpp/releases/download/b9509/cudart-llama-bin-win-cuda-12.4-x64.zip" `
+                -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-782-b290693/cudart-sd-bin-win-cu12-x64.zip" `
                 -Dest $dllZip `
-                -Label "CUDA v12 Runtime DLLs (llama.cpp)"
+                -Label "CUDA 12.8 Runtime DLLs (stable-diffusion.cpp)"
 
             if ($ok) {
                 Expand-WithProgress -ZipPath $dllZip -Destination $backendDest -Label "CUDA Runtime DLLs"
@@ -464,6 +473,13 @@ if ($hasNvidia) {
             } else {
                 Print-Warn "Could not download portable CUDA runtime DLLs automatically. If the app fails to start in CUDA mode, you may need to install the CUDA Toolkit manually."
             }
+        }
+
+        $cudaDllsExist = (Test-Path (Join-Path $backendDest "cublas64_12.dll")) -and `
+                         (Test-Path (Join-Path $backendDest "cublasLt64_12.dll")) -and `
+                         (Test-Path (Join-Path $backendDest "cudart64_12.dll"))
+        if ($cudaDllsExist) {
+            Set-Content -Path $backendVersionFile -Value $expectedBackendVersion -Encoding ASCII
         }
     }
 

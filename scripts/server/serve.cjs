@@ -3180,7 +3180,8 @@ function getBackendOptions() {
     unavailable.push({ id: "vulkan", label: "Vulkan GPU", reason: getVulkanUnavailableReason() });
   }
   if (cudaInstalled && !cudaAvailable) {
-    unavailable.push({ id: "cuda", label: "CUDA GPU", reason: "Installed, but CUDA backend validation failed." });
+    const cudaPath = osPlatform === "win32" ? BACKEND_PATHS.cuda : BACKEND_PATHS.linuxCuda;
+    unavailable.push({ id: "cuda", label: "CUDA GPU", reason: backendValidationErrors[cudaPath] || "Installed, but CUDA backend validation failed." });
   }
   if (rocmInstalled && !rocmAvailable) {
     unavailable.push({ id: "rocm", label: "ROCm GPU (AMD)", reason: "Installed, but ROCm backend validation failed." });
@@ -3278,7 +3279,11 @@ function backendAccepts(binaryPath, backendName) {
     let output = `${result.stdout || ""}\n${result.stderr || ""}`;
     const unsignedExitCode = Number(result.status) >>> 0;
     if (osPlatform === "win32" && unsignedExitCode === 0xC0000135) {
-      backendValidationErrors[binaryPath] = "Windows could not start the Vulkan backend because a required DLL is missing (0xC0000135). Run scripts/setup/setup.ps1 to install the Microsoft Visual C++ runtime and repair the Vulkan backend.";
+      backendValidationErrors[binaryPath] = "Windows could not start this backend because a required DLL is missing (0xC0000135). Run scripts/setup/setup.ps1 to install the Microsoft Visual C++ runtime and repair the backend.";
+      return false;
+    }
+    if (osPlatform === "win32" && unsignedExitCode === 0xC000001D) {
+      backendValidationErrors[binaryPath] = "This Windows backend used a CPU instruction that this processor does not support (0xC000001D). Run scripts/setup/setup.ps1 to replace it with the runtime-dispatched backend build.";
       return false;
     }
 
@@ -4819,7 +4824,7 @@ const IMAGE_BACKEND_DOWNLOADS = {
   "cpu": {
     id: "cpu",
     label: "CPU",
-    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-721-8caa3f9/sd-master-8caa3f9-bin-win-avx2-x64.zip",
+    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-782-b290693/sd-master-b290693-bin-win-cpu-x64.zip",
     destDir: path.join(ROOT, "app", "backend", "win", "cpu"),
     exeName: "sd-cpu.exe",
     requiredDll: "stable-diffusion.dll",
@@ -4835,7 +4840,7 @@ const IMAGE_BACKEND_DOWNLOADS = {
   "cuda": {
     id: "cuda",
     label: "CUDA GPU",
-    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-721-8caa3f9/sd-master-8caa3f9-bin-win-cuda12-x64.zip",
+    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-782-b290693/sd-master-b290693-bin-win-cuda12-x64.zip",
     destDir: path.join(ROOT, "app", "backend", "win", "cuda"),
     exeName: "sd-cuda.exe",
     requiredDll: "stable-diffusion.dll",
@@ -5447,6 +5452,10 @@ function describeLinuxRuntimeLinkerError(rawError) {
 
 function describeBackendExitCode(code, backendPath) {
   const numericCode = Number(code);
+  if (osPlatform === "win32" && numericCode === 3221225501) {
+    const backendName = path.basename(backendPath || BACKEND_PATH || "backend");
+    return `exited with code ${code} (0xC000001D: illegal CPU instruction).\n\nThe model is not the cause. Windows stopped ${backendName} because the backend used a CPU instruction that this processor does not support. Run scripts/setup/setup.ps1 to replace the old machine-specific build with the runtime-dispatched Windows backend and matching CUDA 12.8 runtime. RTX 50-series users should then retry CUDA mode; CPU mode remains available as a fallback.`;
+  }
   if (osPlatform === "win32" && numericCode === 3221225781) {
     const backendName = path.basename(backendPath || BACKEND_PATH || "backend");
     const lowerBackend = backendName.toLowerCase();
