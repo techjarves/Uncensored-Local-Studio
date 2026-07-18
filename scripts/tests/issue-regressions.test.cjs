@@ -106,3 +106,17 @@ test("Windows launcher remains ASCII-safe for cmd.exe", () => {
   const launcher = fs.readFileSync(path.join(root, "windows.bat"));
   assert.equal([...launcher].some((byte) => byte > 0x7f), false);
 });
+
+test("Windows Vulkan setup repairs issue 10 runtime and RX 580 backend failures", () => {
+  const setup = read("scripts/setup/setup.ps1");
+  const server = read("scripts/server/serve.cjs");
+
+  assert.match(setup, /https:\/\/aka\.ms\/vc14\/vc_redist\.x64\.exe/);
+  assert.match(setup, /VCOMP140\.dll/);
+  assert.match(setup, /master-685-19bdfe2\/sd-master-19bdfe2-bin-win-vulkan-x64\.zip/);
+  assert.match(setup, /\.backend-version/);
+
+  assert.match(server, /backendName === "vulkan"[\s\S]*?getPreferredVulkanBackendName\(\)/);
+  assert.match(server, /0xC0000135/);
+  assert.match(server, /Microsoft Visual C\+\+ runtime/);
+});

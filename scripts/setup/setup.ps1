@@ -191,6 +191,57 @@ function Expand-WithProgress {
     Write-Host ""
 }
 
+function Ensure-VisualCppRuntime {
+    $requiredDlls = @(
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "MSVCP140.dll",
+        "MSVCP140_CODECVT_IDS.dll",
+        "VCOMP140.dll"
+    )
+    $systemDir = Join-Path $env:WINDIR "System32"
+    $missingDlls = @($requiredDlls | Where-Object { -not (Test-Path (Join-Path $systemDir $_)) })
+
+    if ($missingDlls.Count -eq 0) {
+        Print-OK "Microsoft Visual C++ runtime already ready."
+        return
+    }
+
+    Print-Info "Installing the Microsoft Visual C++ runtime required by the Windows backends..."
+    Print-Info "Windows may ask for administrator approval."
+    New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+    $installer = Join-Path $toolsDir "vc_redist.x64.exe"
+    $ok = Invoke-RichDownload `
+        -Url "https://aka.ms/vc14/vc_redist.x64.exe" `
+        -Dest $installer `
+        -Label "Microsoft Visual C++ Redistributable (x64)"
+
+    if (-not $ok) {
+        throw "Cannot download the Microsoft Visual C++ Redistributable. Install https://aka.ms/vc14/vc_redist.x64.exe manually, then run setup again."
+    }
+
+    try {
+        $process = Start-Process `
+            -FilePath $installer `
+            -ArgumentList "/install", "/passive", "/norestart" `
+            -Verb RunAs `
+            -Wait `
+            -PassThru
+        if ($process.ExitCode -notin @(0, 1638, 3010)) {
+            throw "The Microsoft Visual C++ installer exited with code $($process.ExitCode)."
+        }
+    } finally {
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    }
+
+    $missingDlls = @($requiredDlls | Where-Object { -not (Test-Path (Join-Path $systemDir $_)) })
+    if ($missingDlls.Count -gt 0) {
+        throw "The Microsoft Visual C++ runtime is still incomplete. Missing: $($missingDlls -join ', '). Restart Windows, install https://aka.ms/vc14/vc_redist.x64.exe manually, then run setup again."
+    }
+
+    Print-OK "Microsoft Visual C++ runtime installed successfully."
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 Print-Header
 
@@ -259,6 +310,14 @@ if (-not $nodeReady) {
     }
 
     Print-OK "Portable Node.js ready: $v"
+}
+
+try {
+    Ensure-VisualCppRuntime
+} catch {
+    Print-Fail $_
+    Read-Host
+    exit 1
 }
 
 # ── Step 2: stable-diffusion.cpp GPU Backend (Dynamic Detection) ──────────────
@@ -412,16 +471,20 @@ if ($hasNvidia) {
     $backendDest = Join-Path $appDir "backend\win\vulkan"
     $backendExe  = Join-Path $backendDest "sd-vulkan.exe"
     $backendDll  = Join-Path $backendDest "stable-diffusion.dll"
+    $backendVersionFile = Join-Path $backendDest ".backend-version"
+    $expectedBackendVersion = "master-685-19bdfe2"
+    $installedBackendVersion = if (Test-Path $backendVersionFile) { (Get-Content $backendVersionFile -Raw).Trim() } else { "" }
 
-    if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+    if ((Test-Path $backendExe) -and (Test-Path $backendDll) -and ($installedBackendVersion -eq $expectedBackendVersion)) {
         Print-OK "Vulkan GPU backend binaries already ready."
     } else {
         $backendZip = Join-Path $toolsDir "sd-vulkan.zip"
         New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+        if (Test-Path $backendDest) { Remove-Item $backendDest -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $backendDest | Out-Null
 
         $ok = Invoke-RichDownload `
-            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-669-2d40a8b/sd-master-2d40a8b-bin-win-vulkan-x64.zip" `
+            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-685-19bdfe2/sd-master-19bdfe2-bin-win-vulkan-x64.zip" `
             -Dest $backendZip `
             -Label "stable-diffusion.cpp Vulkan Backend (Windows x64)"
 
@@ -451,6 +514,7 @@ if ($hasNvidia) {
         }
 
         if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+            Set-Content -Path $backendVersionFile -Value $expectedBackendVersion -Encoding ASCII
             Print-OK "Vulkan GPU backend binaries installed successfully!"
         } else {
             Print-Fail "Failed to copy backend binaries to app/backend/win/vulkan/."
@@ -462,16 +526,20 @@ if ($hasNvidia) {
     $backendDest = Join-Path $appDir "backend\win\vulkan"
     $backendExe  = Join-Path $backendDest "sd-vulkan.exe"
     $backendDll  = Join-Path $backendDest "stable-diffusion.dll"
+    $backendVersionFile = Join-Path $backendDest ".backend-version"
+    $expectedBackendVersion = "master-685-19bdfe2"
+    $installedBackendVersion = if (Test-Path $backendVersionFile) { (Get-Content $backendVersionFile -Raw).Trim() } else { "" }
     
-    if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+    if ((Test-Path $backendExe) -and (Test-Path $backendDll) -and ($installedBackendVersion -eq $expectedBackendVersion)) {
         Print-OK "Vulkan GPU backend binaries already ready."
     } else {
         $backendZip = Join-Path $toolsDir "sd-vulkan.zip"
         New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+        if (Test-Path $backendDest) { Remove-Item $backendDest -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $backendDest | Out-Null
 
         $ok = Invoke-RichDownload `
-            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-669-2d40a8b/sd-master-2d40a8b-bin-win-vulkan-x64.zip" `
+            -Url  "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-685-19bdfe2/sd-master-19bdfe2-bin-win-vulkan-x64.zip" `
             -Dest $backendZip `
             -Label "stable-diffusion.cpp Vulkan Backend (Windows x64)"
 
@@ -503,6 +571,7 @@ if ($hasNvidia) {
         }
 
         if ((Test-Path $backendExe) -and (Test-Path $backendDll)) {
+            Set-Content -Path $backendVersionFile -Value $expectedBackendVersion -Encoding ASCII
             Print-OK "Vulkan GPU backend binaries installed successfully!"
         } else {
             Print-Fail "Failed to copy backend binaries to app/backend/win/vulkan/."

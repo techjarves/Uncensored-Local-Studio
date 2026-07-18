@@ -55,6 +55,7 @@ const BACKEND_PATHS = {
 };
 let BACKEND_PATH = "";
 const backendSupportsFlags = {};
+const backendValidationErrors = {};
 if (osPlatform === "win32") {
   let hasNvidia = false;
   try {
@@ -3026,6 +3027,10 @@ function getVulkanUnavailableReason() {
   if (osPlatform === "win32" && !hasVulkanRuntime()) {
     return "The Vulkan runtime (vulkan-1.dll) is missing. Install or update your GPU vendor driver with Vulkan support, then run setup again so the Vulkan backend folder is repaired.";
   }
+  const vulkanPath = osPlatform === "win32" ? BACKEND_PATHS.vulkan : BACKEND_PATHS.linuxVulkan;
+  if (backendValidationErrors[vulkanPath]) {
+    return backendValidationErrors[vulkanPath];
+  }
   if (osPlatform === "linux" && isRunningInWSL()) {
     const gpuName = getGpuInfo().name;
     const lowerGpu = gpuName.toLowerCase();
@@ -3239,7 +3244,14 @@ function getBackendOptions() {
 function backendAccepts(binaryPath, backendName) {
   if (!binaryPath || !fs.existsSync(binaryPath)) return false;
   try {
-    const cliBackendName = backendName;
+    delete backendValidationErrors[binaryPath];
+    const cliBackendName = backendName === "cuda"
+      ? "cuda0"
+      : backendName === "vulkan"
+        ? getPreferredVulkanBackendName()
+        : backendName === "rocm"
+          ? "rocm0"
+          : backendName;
     let probeArgs = [
       "--backend", cliBackendName,
       "--params-backend", cliBackendName,
@@ -3264,6 +3276,11 @@ function backendAccepts(binaryPath, backendName) {
     }
     let result = spawnSync(binaryPath, probeArgs, { env: spawnEnv, encoding: "utf8", timeout: 5000 });
     let output = `${result.stdout || ""}\n${result.stderr || ""}`;
+    const unsignedExitCode = Number(result.status) >>> 0;
+    if (osPlatform === "win32" && unsignedExitCode === 0xC0000135) {
+      backendValidationErrors[binaryPath] = "Windows could not start the Vulkan backend because a required DLL is missing (0xC0000135). Run scripts/setup/setup.ps1 to install the Microsoft Visual C++ runtime and repair the Vulkan backend.";
+      return false;
+    }
 
     let supportsFlags = true;
     // Some binaries do not support --backend. If we see "unknown argument",
@@ -4810,7 +4827,7 @@ const IMAGE_BACKEND_DOWNLOADS = {
   "vulkan": {
     id: "vulkan",
     label: "Vulkan GPU",
-    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-669-2d40a8b/sd-master-2d40a8b-bin-win-vulkan-x64.zip",
+    url: "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-685-19bdfe2/sd-master-19bdfe2-bin-win-vulkan-x64.zip",
     destDir: path.join(ROOT, "app", "backend", "win", "vulkan"),
     exeName: "sd-vulkan.exe",
     requiredDll: "stable-diffusion.dll",
@@ -5436,17 +5453,17 @@ function describeBackendExitCode(code, backendPath) {
     const isVulkan = lowerBackend.includes("vulkan");
     const isCuda = lowerBackend.includes("cuda");
     const likelyMissing = isVulkan
-      ? "the Vulkan runtime/driver DLL, such as vulkan-1.dll"
+      ? "a Microsoft Visual C++ runtime DLL (such as VCOMP140.dll) or the Vulkan driver DLL (vulkan-1.dll)"
       : isCuda
         ? "a CUDA runtime DLL or NVIDIA driver component"
         : "a required backend DLL";
     const driverHint = isVulkan
-      ? "Install or update the GPU vendor driver with Vulkan support, then run setup again so the Vulkan backend folder is repaired."
+      ? "Run scripts/setup/setup.ps1 to install the Microsoft runtime and repair the Vulkan backend, then update the GPU driver if vulkan-1.dll is still unavailable."
       : isCuda
         ? "Install or update the NVIDIA driver, then run setup again so the CUDA backend folder is repaired."
         : "Update the GPU driver, then run setup again so the backend folder is repaired.";
 
-    return `exited with code ${code} (0xC0000135: required DLL not found).\n\nWindows could not start ${backendName} because ${likelyMissing} is missing or not loadable. ${driverHint}\n\nIf you are using an AMD/Intel GPU, update the AMD/Intel graphics driver first. If the GPU is too old for the current Vulkan backend, switch the backend to CPU.`;
+    return `exited with code ${code} (0xC0000135: required DLL not found).\n\nWindows could not start ${backendName} because ${likelyMissing} is missing or not loadable. ${driverHint}\n\nCPU mode remains available if Vulkan still cannot start.`;
   }
 
   return `exited with code ${code}`;
