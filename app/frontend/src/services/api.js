@@ -956,21 +956,21 @@ export async function generateImage(prompt, negativePrompt, constraints, activeM
   const baseUrl = await getBackendBaseUrl();
 
 
-  // txt2img uses /v1/images/generations; img2img uses /sdapi/v1/img2img.
+  // Use the sdapi endpoints for both modes. The OpenAI-compatible endpoint
+  // ignores native generation fields such as seed, steps, CFG, and sampler.
   const isImg2Img = !!payload.image;
-  let endpoint = `${baseUrl}/v1/images/generations`;
+  let endpoint = `${baseUrl}/sdapi/v1/txt2img`;
 
   let genBody = {
     prompt:           payload.prompt,
     negative_prompt:  payload.negative_prompt || "",
-    n:                1,
-    size:             `${payload.width}x${payload.height}`,
-    response_format:  "b64_json",
-    // Generation parameters — read by stable-diffusion.cpp from the request body
+    width:            payload.width,
+    height:           payload.height,
     steps:            payload.steps,
     cfg_scale:        payload.cfg_scale,
     seed:             payload.seed,
-    sample_method:    payload.sampler || "euler_a",
+    sampler_name:     payload.sampler || "euler_a",
+    batch_size:       1,
   };
 
   // img2img extra fields
@@ -1304,5 +1304,4 @@ export async function getGenerationProgress() {
     return { active: false, error: e.message };
   }
 }
-
 

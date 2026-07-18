@@ -15,6 +15,11 @@ DIST_DIR="$APP_DIR/dist"
 PLATFORM="$(uname -s)"
 ARCH="$(uname -m)"
 
+if [[ "$PLATFORM" == "Darwin" ]] && [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+  # Under Rosetta, uname reports x86_64 even though arm64 binaries are supported.
+  ARCH="arm64"
+fi
+
 if [[ "$PLATFORM" == "Darwin" ]]; then
   PLATFORM_LABEL="macOS"
   NODE_DIR="$TOOLS_DIR/node-mac"
@@ -259,6 +264,42 @@ check_linux_runtime_abi() {
   print_ok "Linux runtime ABI ready: glibc $current_glibc, GLIBCXX_$current_glibcxx"
 }
 
+has_linux_shared_library() {
+  local library="$1"
+  if command -v ldconfig >/dev/null 2>&1 && grep -Fq "$library" < <(ldconfig -p 2>/dev/null); then
+    return 0
+  fi
+  [[ -n "$(find /lib /lib64 /usr/lib /usr/lib64 -name "$library" -print -quit 2>/dev/null)" ]]
+}
+
+check_linux_runtime_dependencies() {
+  if ! has_linux_shared_library "libgomp.so.1"; then
+    print_fail "The required OpenMP runtime (libgomp.so.1) is missing."
+    print_info "Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y libgomp1"
+    print_info "Fedora: sudo dnf install libgomp"
+    return 1
+  fi
+  print_ok "Linux OpenMP runtime ready: libgomp.so.1"
+}
+
+linux_backend_is_healthy() {
+  local binary="$1"
+  local backend_dir="$2"
+  local reject_pattern="${3:-}"
+  [[ -x "$binary" ]] || return 1
+  command -v ldd >/dev/null 2>&1 || return 0
+
+  local output
+  output="$(LD_LIBRARY_PATH="$backend_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$binary" 2>&1 || true)"
+  if grep -q "not found" <<<"$output"; then
+    return 1
+  fi
+  if [[ -n "$reject_pattern" ]] && grep -Eqi "$reject_pattern" <<<"$output"; then
+    return 1
+  fi
+  return 0
+}
+
 copy_binaries_from_extracted() {
   local extracted_dir="$1" dest_dir="$2" main_name="$3" server_name="$4"
 
@@ -305,6 +346,10 @@ if [[ "$PLATFORM" == "Linux" ]]; then
     print_fail "Linux setup stopped before downloading incompatible backend binaries."
     exit 1
   fi
+  if ! check_linux_runtime_dependencies; then
+    print_fail "Linux setup stopped before installing backends with missing runtime libraries."
+    exit 1
+  fi
 fi
 
 TOTAL_STEPS=7
@@ -312,10 +357,20 @@ TOTAL_STEPS=7
 # ── Step 1: Portable Node.js ────────────────────────────────────────────────
 print_step 1 $TOTAL_STEPS "Setting up portable Node.js ($NODE_DIR/)"
 
-if [[ -x "$NODE_BIN" && -x "$NPM_BIN" ]]; then
+EXPECTED_NODE_ARCH="${NODE_PLATFORM_ARCH##*-}"
+INSTALLED_NODE_ARCH=""
+if [[ -x "$NODE_BIN" ]]; then
+  INSTALLED_NODE_ARCH="$("$NODE_BIN" -p "process.arch" 2>/dev/null || true)"
+fi
+
+if [[ -x "$NODE_BIN" && -x "$NPM_BIN" && "$INSTALLED_NODE_ARCH" == "$EXPECTED_NODE_ARCH" ]]; then
   VERSION=$("$NODE_BIN" --version)
   print_ok "Portable Node.js already ready: $VERSION"
 else
+  if [[ -n "$INSTALLED_NODE_ARCH" && "$INSTALLED_NODE_ARCH" != "$EXPECTED_NODE_ARCH" ]]; then
+    print_warn "Replacing portable Node.js $INSTALLED_NODE_ARCH with $EXPECTED_NODE_ARCH for this hardware."
+    rm -rf "$NODE_DIR"
+  fi
   mkdir -p "$TOOLS_DIR"
   NODE_TAR_PATH="$TOOLS_DIR/$NODE_TARBALL"
 
@@ -418,8 +473,10 @@ else
 
 # CPU backend (always)
 CPU_BACKEND_DIR="$BACKEND_DIR/cpu"
-if [[ ! -f "$CPU_BACKEND_DIR/sd-cpu" || ! -f "$CPU_BACKEND_DIR/sd-server-cpu" ]]; then
+if ! linux_backend_is_healthy "$CPU_BACKEND_DIR/sd-server-cpu" "$CPU_BACKEND_DIR"; then
   mkdir -p "$CPU_BACKEND_DIR"
+  rm -rf "$CPU_BACKEND_DIR/extracted"
+  rm -f "$CPU_BACKEND_DIR"/sd-cpu "$CPU_BACKEND_DIR"/sd-server-cpu "$CPU_BACKEND_DIR"/*.so
   CPU_ZIP="$TOOLS_DIR/sd-cpu.zip"
   download_file "$SD_BASE_URL/sd-master-${SD_SHORT_HASH}-bin-Linux-Ubuntu-24.04-x86_64.zip" "$CPU_ZIP" "stable-diffusion.cpp CPU Backend (Linux x86_64)"
   extract_zip "$CPU_ZIP" "$CPU_BACKEND_DIR/extracted" "CPU Backend"
@@ -434,8 +491,14 @@ chmod +x "$CPU_BACKEND_DIR/sd-cpu" "$CPU_BACKEND_DIR/sd-server-cpu" 2>/dev/null 
 
 # Vulkan backend (always - cross-vendor GPU fallback)
 VULKAN_BACKEND_DIR="$BACKEND_DIR/vulkan"
-if [[ ! -f "$VULKAN_BACKEND_DIR/sd-vulkan" || ! -f "$VULKAN_BACKEND_DIR/sd-server-vulkan" ]]; then
+if ! has_linux_shared_library "libvulkan.so.1"; then
+  print_warn "Vulkan runtime library libvulkan.so.1 is missing; the CPU backend will remain available."
+  print_info "Ubuntu/Debian: sudo apt-get install -y libvulkan1 mesa-vulkan-drivers"
+  print_info "Fedora: sudo dnf install vulkan-loader mesa-vulkan-drivers"
+elif ! linux_backend_is_healthy "$VULKAN_BACKEND_DIR/sd-server-vulkan" "$VULKAN_BACKEND_DIR" "hipblas|rocblas|amdhip"; then
   mkdir -p "$VULKAN_BACKEND_DIR"
+  rm -rf "$VULKAN_BACKEND_DIR/extracted"
+  rm -f "$VULKAN_BACKEND_DIR"/sd-vulkan "$VULKAN_BACKEND_DIR"/sd-server-vulkan "$VULKAN_BACKEND_DIR"/*.so
   VULKAN_ZIP="$TOOLS_DIR/sd-vulkan.zip"
   download_file "$SD_BASE_URL/sd-master-${SD_SHORT_HASH}-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip" "$VULKAN_ZIP" "stable-diffusion.cpp Vulkan Backend (Linux x86_64)"
   extract_zip "$VULKAN_ZIP" "$VULKAN_BACKEND_DIR/extracted" "Vulkan Backend"

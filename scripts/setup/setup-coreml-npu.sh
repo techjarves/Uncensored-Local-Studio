@@ -10,6 +10,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 VENV_DIR="$ROOT_DIR/app/backend/mac/coreml_venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
+ARCH="$(uname -m)"
+
+if [[ "$(uname -s)" == "Darwin" ]] && [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+  ARCH="arm64"
+fi
 
 is_coreml_python_supported() {
   "$1" - <<'PY' >/dev/null 2>&1
@@ -53,7 +58,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-if [[ "$(uname -m)" != "arm64" ]]; then
+if [[ "$ARCH" != "arm64" ]]; then
   echo "  [ERROR] CoreML NPU support requires Apple Silicon (M1/M2/M3/M4/etc. arm64)." >&2
   exit 1
 fi

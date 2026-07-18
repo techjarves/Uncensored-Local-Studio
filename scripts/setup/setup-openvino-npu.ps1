@@ -104,7 +104,12 @@ Write-Host "  ============================================================"
 Write-Host ""
 
 $npu = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
-  Where-Object { $_.Name -like "*Intel(R) AI Boost*" -or ($_.Name -match "NPU" -and $_.PNPClass -eq "ComputeAccelerator") } |
+  Where-Object {
+    $name = [string]$_.Name
+    $manufacturer = [string]$_.Manufacturer
+    ($name -match "(?i)Intel.*(?:AI Boost|NPU)") -or
+    (($manufacturer -match "(?i)Intel") -and ($name -match "(?i)(?:AI Boost|\bNPU\b)"))
+  } |
   Select-Object -First 1
 
 if (-not $npu) {

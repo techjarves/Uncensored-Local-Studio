@@ -23,7 +23,7 @@ if "%LLM_PORT%"=="" set LLM_PORT=10086
 set SETUP_REASON=
 set SETUP_MODE=Repair
 
-:: ── First-time setup check ────────────────────────────────────────────────────
+:: -- First-time setup check ----------------------------------------------------
 if not exist "%APP%\tools\node-win" set SETUP_MODE=First-Time Setup
 if not exist "%NODE%" (
     set SETUP_REASON=Portable Node.js is missing.
@@ -87,7 +87,7 @@ if errorlevel 1 (
 :: After setup, continue to launch
 goto :launch
 
-:: ── Launch ────────────────────────────────────────────────────────────────────
+:: -- Launch -------------------------------------------------------------------
 :launch
 echo.
 echo  ============================================================

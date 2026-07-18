@@ -3444,7 +3444,9 @@ function proxyImageBackendRequest(req, res) {
     path: req.url,
     method: req.method,
     headers,
-    timeout: 300000,
+    // CPU generation and VAE decoding can legitimately take well over five
+    // minutes on low-memory systems. Let the browser/user control cancellation.
+    timeout: 0,
   }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode || 502, {
       ...proxyRes.headers,
@@ -6763,6 +6765,12 @@ async function getLlmfitRecommendations(useCase = "chat", limit = 10) {
       const imageBackendReady = (backendReady && backendProc) || (openvinoReady && openvinoProc);
       if (imageBackendReady && backendSettingsMatch(currentSettings, requestedSettings)) {
         return json(res, 200, { ok: true, message: "Backend already running with requested settings.", settings: currentSettings, port: PORT_BACKEND });
+      }
+      if (generationState.active) {
+        return json(res, 409, {
+          ok: false,
+          error: "Image generation is in progress. Wait for it to finish or cancel it before changing backend settings.",
+        });
       }
       if (backendReady && backendProc && appleNpuRuntimeMatches(currentSettings, requestedSettings)) {
         currentSettings = requestedSettings;
