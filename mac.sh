@@ -9,16 +9,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$SCRIPT_DIR/app"
 PLATFORM="$(uname -s)"
+ARCH="$(uname -m)"
 
 if [[ "$PLATFORM" != "Darwin" ]]; then
   echo "[ERROR] This script is for macOS only. Please run ./linux.sh on Linux." >&2
   exit 1
 fi
 
+if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+  ARCH="arm64"
+fi
+
 NODE_DIR="$APP_DIR/tools/node-mac"
 NODE_BIN="$NODE_DIR/bin/node"
 BACKEND_PATH="$APP_DIR/backend/mac/sd"
-if [[ "$(uname -m)" == "arm64" ]]; then
+if [[ "$ARCH" == "arm64" ]]; then
   LLM_BACKEND_PATH="$APP_DIR/llm-backend/mac/arm64/llama-server"
 else
   LLM_BACKEND_PATH="$APP_DIR/llm-backend/mac/x64/llama-server"

@@ -9,6 +9,10 @@ RELEASE="${LLAMA_RELEASE:-b9668}"
 PLATFORM="$(uname -s)"
 ARCH="$(uname -m)"
 
+if [[ "$PLATFORM" == "Darwin" ]] && [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then
+  ARCH="arm64"
+fi
+
 download_and_extract() {
   local asset="$1"
   local dest="$2"

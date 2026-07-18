@@ -33,6 +33,17 @@ function Print-Info { param([string]$m); Write-Host "   >>  $m" -ForegroundColor
 function Print-Warn { param([string]$m); Write-Host "   !!  $m" -ForegroundColor Yellow }
 function Print-Fail { param([string]$m); Write-Host "   XX  $m" -ForegroundColor Red }
 
+function Get-IntelOpenVinoNpu {
+    Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+        Where-Object {
+            $name = [string]$_.Name
+            $manufacturer = [string]$_.Manufacturer
+            ($name -match "(?i)Intel.*(?:AI Boost|NPU)") -or
+            (($manufacturer -match "(?i)Intel") -and ($name -match "(?i)(?:AI Boost|\bNPU\b)"))
+        } |
+        Select-Object -First 1
+}
+
 function Format-Bytes {
     param([long]$b)
     if ($b -gt 1GB) { return "{0:N2} GB" -f ($b / 1GB) }
@@ -522,19 +533,20 @@ if (-not $?) {
     Read-Host; exit 1
 }
 
-$npu = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "*Intel(R) AI Boost*" -or ($_.Name -match "NPU" -and $_.PNPClass -eq "ComputeAccelerator") } |
-    Select-Object -First 1
+$npu = Get-IntelOpenVinoNpu
 
 Print-Step 6 $steps "Setting up portable OpenVINO NPU runtime"
 if ($npu) {
-    & (Join-Path $scriptDir "setup-openvino-npu.ps1")
-    if (-not $?) {
-        Print-Fail "OpenVINO NPU setup failed."
-        Read-Host; exit 1
+    try {
+        & (Join-Path $scriptDir "setup-openvino-npu.ps1")
+        if (-not $?) {
+            throw "OpenVINO NPU setup returned a failure status."
+        }
+    } catch {
+        Print-Warn "OpenVINO NPU setup failed. Continuing with the available GPU/CPU backends. $($_.Exception.Message)"
     }
 } else {
-    Print-Info "Intel AI Boost NPU not detected. Skipping OpenVINO NPU runtime."
+    Print-Info "Compatible Intel AI Boost NPU not detected. Skipping the optional OpenVINO NPU runtime."
 }
 
 Print-Step 7 $steps "Installing frontend dependencies (app/frontend/)"

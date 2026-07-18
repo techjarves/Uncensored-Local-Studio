@@ -210,6 +210,7 @@ Ensure you have a modern web browser installed. Follow the quick guide below for
 > **System Requirements & Notes:**
 > - **64-bit Windows 10 or Windows 11** is required for the portable Node.js 22 runtime used by the Windows launcher.
 > - **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.). The setup script will warn you if your glibc is older.
+> - **Linux runtime libraries:** The prebuilt backends require `libgomp.so.1`; Vulkan additionally requires `libvulkan.so.1` and a working GPU driver. The setup script now checks these before installing a backend and prints the exact distro package command when one is missing.
 > - **Linux OpenVINO NPU:** Intel Core Ultra, x86_64 Linux, kernel 6.6+, a working `/dev/accel/accel0` device, Python 3 with `venv`, and the Intel Linux NPU driver are required.
 
 ---
@@ -266,7 +267,7 @@ For macOS, the included `scripts/build/build_from_source.sh` builds the Metal ba
 ### Requirements
 - `git`, `cmake`, `make` (or `ninja`), and a C++17 compiler (`g++` / `clang++`).
 - For **CUDA**: the NVIDIA CUDA toolkit (`nvcc`) must be on your `PATH`.
-- For **Vulkan**: the Vulkan SDK / loader and a compatible driver.
+- For **Vulkan**: the Vulkan SDK / loader, a compatible driver, and `glslc` (Ubuntu/Debian package: `glslc`).
 - For **ROCm**: AMD ROCm development libraries.
 - For **macOS Metal**: Apple Command Line Tools or Xcode.
 
