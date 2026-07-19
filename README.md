@@ -277,6 +277,7 @@ For macOS, the included `scripts/build/build_from_source.sh` builds the Metal ba
 # 1. Clone upstream
 git clone https://github.com/leejet/stable-diffusion.cpp.git
 cd stable-diffusion.cpp
+git submodule update --recursive --init
 mkdir build && cd build
 
 # 2. Configure for your backend (pick ONE)
